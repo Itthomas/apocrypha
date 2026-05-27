@@ -22,13 +22,14 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 // Each Screeps module. Inter-module imports (e.g. harvester → telemetry) are
 // left as require() calls by marking all OTHER module paths as external.
 const modules = {
-  'main':           'main.ts',
-  'role.harvester': 'roles/harvester.ts',
-  'role.hauler':    'roles/hauler.ts',
-  'role.builder':   'roles/builder.ts',
-  'role.upgrader':  'roles/upgrader.ts',
-  'spawnManager':   'spawnManager.ts',
-  'telemetry':      'telemetry/index.ts',
+  'main':                 'main.ts',
+  'role.harvester':       'roles/harvester.ts',
+  'role.hauler':          'roles/hauler.ts',
+  'role.builder':         'roles/builder.ts',
+  'role.upgrader':        'roles/upgrader.ts',
+  'spawnManager':         'spawnManager.ts',
+  'constructionPlanner':  'constructionPlanner.ts',
+  'telemetry':            'telemetry/index.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)

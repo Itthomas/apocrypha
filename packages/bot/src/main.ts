@@ -8,6 +8,7 @@
 // Screeps module requires
 var spawnManager = require('spawnManager');
 var telemetry = require('telemetry');
+var constructionPlanner = require('constructionPlanner');
 var roleHarvester = require('role.harvester');
 var roleHauler = require('role.hauler');
 var roleBuilder = require('role.builder');
@@ -51,11 +52,19 @@ export function loop(): void {
     }
   }
 
-  // --- Spawning ---
+  // --- Construction planning ---
   for (var roomName in Game.rooms) {
     var room = Game.rooms[roomName];
     if (room.controller && room.controller.my) {
-      spawnManager.runSpawnManager(room);
+      constructionPlanner.runConstructionPlanner(room);
+    }
+  }
+
+  // --- Spawning ---
+  for (var roomName2 in Game.rooms) {
+    var room2 = Game.rooms[roomName2];
+    if (room2.controller && room2.controller.my) {
+      spawnManager.runSpawnManager(room2);
     }
   }
 
