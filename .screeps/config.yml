@@ -1,9 +1,7 @@
 # Apocrypha — Local Screeps Private Server
 # Uses screepsmod-auth for password-based login (no Steam required)
 
-# Set your Steam API key here or as STEAM_KEY env var
-# Free key at https://steamcommunity.com/dev/apikey
-# steamKey: "YOUR_KEY_HERE"
+steamKey: "28C2189CAEA0D861143FD2901932D08C"
 
 pinnedPackages:
   ssri: 8.0.1

@@ -9,3 +9,5 @@ dist/
 .screeps/node_modules/
 .screeps/package.json
 .screeps/yarn.lock
+.screeps/*
+!.screeps/config.yml
