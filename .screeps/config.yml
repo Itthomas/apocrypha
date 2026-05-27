@@ -15,6 +15,9 @@ mods:
   - screepsmod-admin-utils
   - screepsmod-mongo
 
+bots:
+  apocrypha: /screeps/bots/apocrypha
+
 serverConfig:
   tickRate: 1000
   welcomeText: |
