@@ -1,4 +1,4 @@
-/* Apocrypha — built 2026-05-27T20:05:43.827Z */
+/* Apocrypha — built 2026-05-27T21:09:07.170Z */
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -304,6 +304,7 @@ function getSpawnQuotas(room) {
   const rcl = room.controller?.level ?? 0;
   const energyCap = room.energyCapacityAvailable;
   const energyAvail = room.energyAvailable;
+  const BODY_BASE_COST = BODYPART_COST[WORK] + BODYPART_COST[CARRY] + BODYPART_COST[MOVE];
   const buildBody = (work) => {
     const parts = [];
     for (let i = 0; i < work; i++) parts.push(WORK);
@@ -311,38 +312,39 @@ function getSpawnQuotas(room) {
     for (let i = 0; i < work; i++) parts.push(MOVE);
     return parts;
   };
-  const tiers = Math.min(Math.floor(energyAvail / 150), Math.floor(energyCap / 150));
+  const tiers = Math.min(Math.floor(energyAvail / BODY_BASE_COST), Math.floor(energyCap / BODY_BASE_COST));
+  const safeTiers = Math.max(1, tiers);
   const quotas = [];
   switch (rcl) {
     case 0:
     case 1:
-      quotas.push({ role: "harvester", body: buildBody(Math.min(tiers, 2)), minimum: 2, maximum: 4 });
+      quotas.push({ role: "harvester", body: buildBody(Math.min(safeTiers, 2)), minimum: 2, maximum: 4 });
       break;
     case 2:
-      quotas.push({ role: "harvester", body: buildBody(Math.min(tiers, 3)), minimum: 2, maximum: 4 });
-      quotas.push({ role: "builder", body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: "upgrader", body: buildBody(Math.min(tiers, 2)), minimum: 1, maximum: 2 });
+      quotas.push({ role: "harvester", body: buildBody(Math.min(safeTiers, 3)), minimum: 2, maximum: 4 });
+      quotas.push({ role: "builder", body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
+      quotas.push({ role: "upgrader", body: buildBody(Math.min(safeTiers, 2)), minimum: 1, maximum: 2 });
       break;
     case 3:
-      quotas.push({ role: "harvester", body: buildBody(Math.min(tiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: "hauler", body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: "builder", body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 2 });
-      quotas.push({ role: "upgrader", body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 3 });
+      quotas.push({ role: "harvester", body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
+      quotas.push({ role: "hauler", body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
+      quotas.push({ role: "builder", body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 2 });
+      quotas.push({ role: "upgrader", body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 3 });
       break;
     case 4:
     case 5:
-      quotas.push({ role: "harvester", body: buildBody(Math.min(tiers, 5)), minimum: 2, maximum: 4 });
-      quotas.push({ role: "hauler", body: buildBody(Math.min(tiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: "builder", body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: "upgrader", body: buildBody(Math.min(tiers, 5)), minimum: 1, maximum: 3 });
+      quotas.push({ role: "harvester", body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 4 });
+      quotas.push({ role: "hauler", body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
+      quotas.push({ role: "builder", body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
+      quotas.push({ role: "upgrader", body: buildBody(Math.min(safeTiers, 5)), minimum: 1, maximum: 3 });
       break;
     case 6:
     case 7:
     case 8:
-      quotas.push({ role: "harvester", body: buildBody(Math.min(tiers, 6)), minimum: 2, maximum: 5 });
-      quotas.push({ role: "hauler", body: buildBody(Math.min(tiers, 5)), minimum: 2, maximum: 5 });
-      quotas.push({ role: "builder", body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: "upgrader", body: buildBody(Math.min(tiers, 6)), minimum: 1, maximum: 4 });
+      quotas.push({ role: "harvester", body: buildBody(Math.min(safeTiers, 6)), minimum: 2, maximum: 5 });
+      quotas.push({ role: "hauler", body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 5 });
+      quotas.push({ role: "builder", body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
+      quotas.push({ role: "upgrader", body: buildBody(Math.min(safeTiers, 6)), minimum: 1, maximum: 4 });
       break;
   }
   return quotas;

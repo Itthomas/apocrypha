@@ -30,7 +30,8 @@ export function getSpawnQuotas(room: Room): SpawnQuota[] {
   const energyCap = room.energyCapacityAvailable;
   const energyAvail = room.energyAvailable;
 
-  // Simple body builder: fill WORK/CARRY/MOVE in equal parts up to energy cap
+  // Simple body builder: fill WORK/CARRY/MOVE in equal parts up to energy budget
+  const BODY_BASE_COST = BODYPART_COST[WORK] + BODYPART_COST[CARRY] + BODYPART_COST[MOVE]; // 200
   const buildBody = (work: number): BodyPartConstant[] => {
     const parts: BodyPartConstant[] = [];
     for (let i = 0; i < work; i++) parts.push(WORK);
@@ -39,8 +40,10 @@ export function getSpawnQuotas(room: Room): SpawnQuota[] {
     return parts;
   };
 
-  // Early game: WORK, CARRY, MOVE triples
-  const tiers = Math.min(Math.floor(energyAvail / 150), Math.floor(energyCap / 150));
+  // Tier = how many WORK/CARRY/MOVE triples we can afford
+  const tiers = Math.min(Math.floor(energyAvail / BODY_BASE_COST), Math.floor(energyCap / BODY_BASE_COST));
+  // Guarantee at least 1 tier if we have the minimum energy
+  const safeTiers = Math.max(1, tiers);
 
   const quotas: SpawnQuota[] = [];
 
@@ -48,41 +51,41 @@ export function getSpawnQuotas(room: Room): SpawnQuota[] {
     case 0:
     case 1:
       // Just harvesters — they self-haul to spawn
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(tiers, 2)), minimum: 2, maximum: 4 });
+      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 2)), minimum: 2, maximum: 4 });
       break;
 
     case 2:
       // Harvesters + builders + one upgrader
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(tiers, 3)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(tiers, 2)), minimum: 1, maximum: 2 });
+      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 3)), minimum: 2, maximum: 4 });
+      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
+      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 2)), minimum: 1, maximum: 2 });
       break;
 
     case 3:
       // Extensions online — bigger bodies, add haulers
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(tiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(tiers, 3)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 3 });
+      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
+      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
+      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 2 });
+      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 3 });
       break;
 
     case 4:
     case 5:
       // Storage + towers online
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(tiers, 5)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(tiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(tiers, 5)), minimum: 1, maximum: 3 });
+      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 4 });
+      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
+      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
+      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 5)), minimum: 1, maximum: 3 });
       break;
 
     case 6:
     case 7:
     case 8:
       // Late game — big bodies
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(tiers, 6)), minimum: 2, maximum: 5 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(tiers, 5)), minimum: 2, maximum: 5 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(tiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(tiers, 6)), minimum: 1, maximum: 4 });
+      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 6)), minimum: 2, maximum: 5 });
+      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 5 });
+      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
+      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 6)), minimum: 1, maximum: 4 });
       break;
   }
 
