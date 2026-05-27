@@ -1,68 +1,86 @@
 /**
- * main.ts — Apocrypha Colony Entry Point
+ * main.ts — Apocrypha Colony Orchestrator (THIN)
  *
- * Exports the `loop` function called by the Screeps runtime every tick.
- * Routes creeps to their role handlers, manages spawning, and collects telemetry.
+ * Requires individual role/manager modules via Screeps require().
+ * Used as: module.exports.loop = function() { ... }
  */
 
-import { runHarvester } from './roles/harvester';
-import { runBuilder } from './roles/builder';
-import { runUpgrader } from './roles/upgrader';
-import { runSpawnManager } from './spawnManager';
-import { collectStats } from './telemetry';
+// Screeps module requires
+var spawnManager = require('spawnManager');
+var telemetry = require('telemetry');
+var roleHarvester = require('role.harvester');
+var roleBuilder = require('role.builder');
+var roleUpgrader = require('role.upgrader');
 
-/**
- * Main game loop. Called by the Screeps runtime on every tick.
- */
+// Map role names to module run functions
+var roleModules: Record<string, any> | null = null;
+
+function getRoleModule(role: string) {
+  if (!roleModules) {
+    roleModules = {
+      'harvester': roleHarvester,
+      'builder': roleBuilder,
+      'upgrader': roleUpgrader,
+    };
+  }
+  return roleModules[role] || null;
+}
+
+/** Count creeps by role in a room */
+function countHarvesters(room: Room): number {
+  var count = 0;
+  room.find(FIND_MY_CREEPS).forEach(function(c) {
+    if (c.memory.role === 'harvester') count++;
+  });
+  return count;
+}
+
 export function loop(): void {
-  // --- Phase 0: Initialization ---
-  // Run once on first tick to initialize memory structures
+  // --- Init ---
   if (!Memory.began) {
     Memory.began = true;
-    console.log('[apocrypha] Initializing colony...');
+    console.log('[apocrypha] Colony online');
   }
 
-  // --- Phase 1: Cleanup ---
-  // Clear dead creep memory
-  for (const name in Memory.creeps) {
+  // --- Cleanup dead creep memory ---
+  for (var name in Memory.creeps) {
     if (!(name in Game.creeps)) {
       delete Memory.creeps[name];
     }
   }
 
-  // --- Phase 2: Spawning ---
-  for (const roomName in Game.rooms) {
-    const room = Game.rooms[roomName];
-    if (room.controller?.my) {
-      runSpawnManager(room);
+  // --- Spawning ---
+  for (var roomName in Game.rooms) {
+    var room = Game.rooms[roomName];
+    if (room.controller && room.controller.my) {
+      spawnManager.runSpawnManager(room);
     }
   }
 
-  // --- Phase 3: Creep Logic ---
-  for (const name in Game.creeps) {
-    const creep = Game.creeps[name];
-    const role = creep.memory.role as string | undefined;
+  // --- Creep logic with emergency fallback ---
+  for (var creepName in Game.creeps) {
+    var creep = Game.creeps[creepName];
+    var role = creep.memory.role as string | undefined;
+    var mod = role ? getRoleModule(role) : null;
 
-    switch (role) {
-      case 'harvester':
-        runHarvester(creep);
-        break;
-      case 'builder':
-        runBuilder(creep);
-        break;
-      case 'upgrader':
-        runUpgrader(creep);
-        break;
-      // Hauler role — TODO: implement when RCL 3+ is reached
-      // case 'hauler': runHauler(creep); break;
-      default:
-        // Unknown role — fall back to harvesting
-        console.log(`[warn] Unknown role "${role}" for creep ${name}`);
-        creep.say('?');
-        runHarvester(creep);
+    // Emergency: if no harvesters, ANY creep should harvest to keep colony alive
+    if (role !== 'harvester' && countHarvesters(creep.room) === 0) {
+      roleHarvester.run(creep);
+      continue;
+    }
+
+    // Normal role dispatch
+    var acted = false;
+    if (mod && mod.run) {
+      acted = mod.run(creep);
+    }
+    
+    // If role couldn't find work, harvest as fallback
+    if (!acted && role !== 'harvester') {
+      roleHarvester.run(creep);
     }
   }
 
-  // --- Phase 4: Telemetry ---
-  collectStats();
+  // --- Telemetry ---
+  telemetry.collectStats();
 }

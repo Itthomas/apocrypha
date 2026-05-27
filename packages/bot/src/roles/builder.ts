@@ -11,7 +11,7 @@ interface BuilderMemory {
   targetId?: Id<ConstructionSite | Structure>;
 }
 
-export function runBuilder(creep: Creep): boolean {
+export function run(creep: Creep): boolean {
   const mem = creep.memory as BuilderMemory;
 
   // State transition
@@ -85,6 +85,15 @@ export function runBuilder(creep: Creep): boolean {
   if (spawnOrExt) {
     if (creep.withdraw(spawnOrExt, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
       creep.moveTo(spawnOrExt);
+    }
+    return true;
+  }
+
+  // Emergency: no stored energy — harvest from a source to bootstrap the colony
+  const source = creep.pos.findClosestByPath(FIND_SOURCES);
+  if (source) {
+    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
     }
     return true;
   }

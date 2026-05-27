@@ -10,7 +10,7 @@ interface UpgraderMemory {
   upgrading: boolean;
 }
 
-export function runUpgrader(creep: Creep): boolean {
+export function run(creep: Creep): boolean {
   const mem = creep.memory as UpgraderMemory;
 
   // State transition
@@ -67,7 +67,16 @@ export function runUpgrader(creep: Creep): boolean {
   }
 
   if (!target) {
-    // Nothing to withdraw — just idle near controller
+    // Emergency: no stored or dropped energy — harvest from a source
+    const source = creep.pos.findClosestByPath(FIND_SOURCES);
+    if (source) {
+      if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+      }
+      return true;
+    }
+
+    // Nothing at all — idle near controller
     if (creep.room.controller) {
       creep.moveTo(creep.room.controller);
     }

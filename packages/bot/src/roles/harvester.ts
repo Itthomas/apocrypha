@@ -49,7 +49,7 @@ function assignSource(creep: Creep): Id<Source> | null {
 /**
  * Main harvester tick. Returns true if the creep acted.
  */
-export function runHarvester(creep: Creep): boolean {
+export function run(creep: Creep): boolean {
   const mem = creep.memory as HarvesterMemory;
 
   // State transition: full → deliver, empty → harvest

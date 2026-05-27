@@ -1,69 +1,95 @@
 /**
  * build.mjs — Apocrypha Build Pipeline
  *
- * Bundles TypeScript sources into the Screeps-compatible format.
- * Output: dist/main.js (single-file bundle, exports `loop`)
+ * Builds TypeScript sources into separate Screeps-compatible CommonJS modules.
+ * Output: dist/modules/ — one .js file per module, loaded via require() at runtime.
+ *
+ * Cross-module imports (e.g. role.harvester → telemetry) are left as require() calls.
  */
 
+
 import * as esbuild from 'esbuild';
-import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 
 const ROOT = dirname(new URL(import.meta.url).pathname);
-const SRC = resolve(ROOT, 'packages/bot/src/main.ts');
-const OUT = resolve(ROOT, 'dist');
+const SRC = resolve(ROOT, 'packages/bot/src');
+const OUT = resolve(ROOT, 'dist/modules');
 const WATCH = process.argv.includes('--watch');
 
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
-/** Shared esbuild config */
-const config = {
-  entryPoints: [SRC],
-  bundle: true,
-  outfile: resolve(OUT, 'main.js'),
-  format: 'cjs',        // Screeps uses CommonJS require()
+// Each Screeps module. Inter-module imports (e.g. harvester → telemetry) are
+// left as require() calls by marking all OTHER module paths as external.
+const modules = {
+  'main':           'main.ts',
+  'role.harvester': 'roles/harvester.ts',
+  'role.builder':   'roles/builder.ts',
+  'role.upgrader':  'roles/upgrader.ts',
+  'spawnManager':   'spawnManager.ts',
+  'telemetry':      'telemetry/index.ts',
+};
+
+// All source entry paths (used to detect cross-module imports)
+const allEntries = Object.values(modules).map(e => resolve(SRC, e));
+
+// Shared esbuild config
+const baseConfig = {
+  format: 'cjs',
   platform: 'node',
   target: 'node18',
-  external: [],          // Bundle everything
-  minify: false,         // Keep readable for debugging
-  sourcemap: false,      // Keep output small
-  banner: {
-    js: '/* Apocrypha — built ' + new Date().toISOString() + ' */'
-  },
+  bundle: true,
+  minify: false,
+  sourcemap: false,
   logLevel: 'info',
-  // Inject Screeps globals so esbuild doesn't complain
   define: {
-    'OK': '0',
-    'ERR_NOT_OWNER': '-1',
-    'ERR_NO_PATH': '-2',
-    'ERR_NAME_EXISTS': '-3',
-    'ERR_BUSY': '-4',
-    'ERR_NOT_FOUND': '-5',
-    'ERR_NOT_ENOUGH_ENERGY': '-6',
-    'ERR_NOT_ENOUGH_RESOURCES': '-6',
-    'ERR_INVALID_TARGET': '-7',
-    'ERR_FULL': '-8',
-    'ERR_NOT_IN_RANGE': '-9',
-    'ERR_INVALID_ARGS': '-10',
-    'ERR_TIRED': '-11',
-    'ERR_NO_BODYPART': '-12',
-    'ERR_NOT_ENOUGH_EXTENSIONS': '-6',
-    'ERR_RCL_NOT_ENOUGH': '-14',
+    'OK': '0', 'ERR_NOT_OWNER': '-1', 'ERR_NO_PATH': '-2',
+    'ERR_NAME_EXISTS': '-3', 'ERR_BUSY': '-4', 'ERR_NOT_FOUND': '-5',
+    'ERR_NOT_ENOUGH_ENERGY': '-6', 'ERR_NOT_ENOUGH_RESOURCES': '-6',
+    'ERR_INVALID_TARGET': '-7', 'ERR_FULL': '-8', 'ERR_NOT_IN_RANGE': '-9',
+    'ERR_INVALID_ARGS': '-10', 'ERR_TIRED': '-11', 'ERR_NO_BODYPART': '-12',
+    'ERR_NOT_ENOUGH_EXTENSIONS': '-6', 'ERR_RCL_NOT_ENOUGH': '-14',
     'ERR_GCL_NOT_ENOUGH': '-15',
   }
 };
 
+async function buildModule(name, entry) {
+  const entryAbs = resolve(SRC, entry);
+
+  // All OTHER module entry points are external (become require() calls)
+  const external = allEntries
+    .filter(e => e !== entryAbs)
+    .map(e => e + '.ts') // also match .ts extension
+  external.push(...allEntries.filter(e => e !== entryAbs)); // match without .ts too
+
+  // Also mark Screeps module names as external (in case of require('role.harvester'))
+  const externalModules = Object.keys(modules).filter(m => m !== name);
+
+  await esbuild.build({
+    ...baseConfig,
+    entryPoints: [entryAbs],
+    outfile: resolve(OUT, name + '.js'),
+    external: externalModules, // Screeps module names → require() calls
+  });
+}
+
 async function main() {
-  if (WATCH) {
-    const ctx = await esbuild.context(config);
-    await ctx.watch();
-    console.log('[build] Watching for changes...');
-  } else {
-    const start = Date.now();
-    await esbuild.build(config);
-    const size = readFileSync(resolve(OUT, 'main.js')).length;
-    console.log(`[build] ✓ dist/main.js (${(size / 1024).toFixed(1)}KB) in ${Date.now() - start}ms`);
+  const start = Date.now();
+  let totalSize = 0;
+
+  for (const [name, entry] of Object.entries(modules)) {
+    await buildModule(name, entry);
+    const size = readFileSync(resolve(OUT, name + '.js')).length;
+    totalSize += size;
+    console.log(`  ${name}.js (${(size / 1024).toFixed(1)}KB)`);
   }
+
+  writeFileSync(resolve(OUT, 'manifest.json'), JSON.stringify({
+    built: new Date().toISOString(),
+    modules: Object.keys(modules)
+  }, null, 2));
+
+  console.log(`[build] ✓ ${Object.keys(modules).length} modules (${(totalSize / 1024).toFixed(1)}KB total) in ${Date.now() - start}ms`);
 }
 
 main().catch(e => {
