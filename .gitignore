@@ -5,3 +5,7 @@ dist/
 .DS_Store
 .screeps/data/
 .screeps/mods/
+.screeps/deps/
+.screeps/node_modules/
+.screeps/package.json
+.screeps/yarn.lock

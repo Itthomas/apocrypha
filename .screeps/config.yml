@@ -1,34 +1,24 @@
-# Apocrypha — Local Screeps Server Configuration
-# Managed by screeps-launcher
+# Apocrypha — Local Screeps Private Server
+# Uses screepsmod-auth for password-based login (no Steam required)
 
-# Server
-server:
-  port: 21025
-  host: 0.0.0.0
+# Set your Steam API key here or as STEAM_KEY env var
+# Free key at https://steamcommunity.com/dev/apikey
+# steamKey: "YOUR_KEY_HERE"
 
-# Game settings
-game:
-  # Accelerate ticks for fast iteration
-  tickRate: 1000  # ms per tick (1000 = 1 tick/sec, lower = faster)
+pinnedPackages:
+  ssri: 8.0.1
+  cacache: 15.3.0
+  passport-steam: 1.0.17
+  minipass-fetch: 2.1.2
+  express-rate-limit: 6.7.0
 
-# No external auth for local dev
-backend:
-  mongo:
-    host: mongo
-    port: 27017
-    database: screeps
-  redis:
-    host: redis
-    port: 6379
-
-# Mods (code injection)
 mods:
   - screepsmod-auth
+  - screepsmod-admin-utils
   - screepsmod-mongo
 
-# Environment
-env:
-  backend: mongo
-  modfile: mods.json
-  steamApiKey: ""
-  serverPassword: ""  # empty = no password
+serverConfig:
+  tickRate: 1000
+  welcomeText: |
+    <h1 style="text-align:center">Apocrypha Dev Server</h1>
+    <p style="text-align:center"><em>"The empire begins here."</em></p>
