@@ -1,0 +1,25 @@
+{
+  "name": "apocrypha",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Screeps AI colony — the Apocrypha empire",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "build:watch": "node build.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy:local": "node build.mjs && node scripts/deploy.mjs --local",
+    "deploy:live": "node build.mjs && node scripts/deploy.mjs --live",
+    "lint": "eslint packages/bot/src",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/screeps": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}
