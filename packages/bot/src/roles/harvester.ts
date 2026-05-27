@@ -67,14 +67,25 @@ export function run(creep: Creep): boolean {
       c => (c.memory as { role?: string }).role === 'hauler'
     );
 
+    // Only drop for haulers if spawn/extensions are mostly full (> 50%)
+    // Otherwise self-deliver to prevent energy starvation
     if (haulers.length > 0) {
-      // Haulers present: drop energy on the ground, return to source
-      creep.drop(RESOURCE_ENERGY);
-      mem.harvesting = true;
-      return true;
+      const hungryStructures = creep.room.find(FIND_MY_STRUCTURES, {
+        filter: s =>
+          (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+          s.store.getUsedCapacity(RESOURCE_ENERGY) < s.store.getCapacity(RESOURCE_ENERGY) * 0.5
+      });
+
+      if (hungryStructures.length === 0) {
+        // Infrastructure is well-fed: drop for haulers, return to source
+        creep.drop(RESOURCE_ENERGY);
+        mem.harvesting = true;
+        return true;
+      }
+      // Fall through: spawn/extensions need energy, self-deliver below
     }
 
-    // No haulers: self-deliver to spawn/extensions
+    // No haulers (or spawn needs energy): self-deliver to spawn/extensions
     const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
       filter: s =>
         (s.structureType === STRUCTURE_SPAWN ||
