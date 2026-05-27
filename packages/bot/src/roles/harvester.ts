@@ -62,7 +62,19 @@ export function run(creep: Creep): boolean {
 
   // DELIVER
   if (!mem.harvesting) {
-    // Priority: spawns/extensions that need energy, then controller at low RCL
+    // Check if haulers exist — if so, drop energy and get back to harvesting
+    const haulers = creep.room.find(FIND_MY_CREEPS).filter(
+      c => (c.memory as { role?: string }).role === 'hauler'
+    );
+
+    if (haulers.length > 0) {
+      // Haulers present: drop energy on the ground, return to source
+      creep.drop(RESOURCE_ENERGY);
+      mem.harvesting = true;
+      return true;
+    }
+
+    // No haulers: self-deliver to spawn/extensions
     const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
       filter: s =>
         (s.structureType === STRUCTURE_SPAWN ||

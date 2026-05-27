@@ -9,6 +9,7 @@
 var spawnManager = require('spawnManager');
 var telemetry = require('telemetry');
 var roleHarvester = require('role.harvester');
+var roleHauler = require('role.hauler');
 var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
 
@@ -19,6 +20,7 @@ function getRoleModule(role: string) {
   if (!roleModules) {
     roleModules = {
       'harvester': roleHarvester,
+      'hauler': roleHauler,
       'builder': roleBuilder,
       'upgrader': roleUpgrader,
     };

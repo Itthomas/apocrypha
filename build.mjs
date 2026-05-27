@@ -24,6 +24,7 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 const modules = {
   'main':           'main.ts',
   'role.harvester': 'roles/harvester.ts',
+  'role.hauler':    'roles/hauler.ts',
   'role.builder':   'roles/builder.ts',
   'role.upgrader':  'roles/upgrader.ts',
   'spawnManager':   'spawnManager.ts',
