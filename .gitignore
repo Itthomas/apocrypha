@@ -1,5 +1,4 @@
 node_modules/
-dist/
 .env
 *.log
 .DS_Store
@@ -11,3 +10,4 @@ dist/
 .screeps/yarn.lock
 .screeps/*
 !.screeps/config.yml
+
