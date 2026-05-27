@@ -1,0 +1,39 @@
+# Apocrypha — Local Screeps Dev Server
+# Full stack: Screeps launcher + MongoDB + Redis
+
+services:
+  screeps:
+    image: screepers/screeps-launcher
+    container_name: apocrypha-server
+    volumes:
+      - ./.screeps:/screeps
+    ports:
+      - "21025:21025"
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment:
+      STEAM_KEY: "28C2189CAEA0D861143FD2901932D08C"
+      MONGO_HOST: mongo
+      MONGO_PORT: "27017"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+
+  mongo:
+    image: mongo:7
+    container_name: apocrypha-mongo
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: apocrypha-redis
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
