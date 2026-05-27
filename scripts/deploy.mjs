@@ -1,13 +1,15 @@
 /**
- * scripts/deploy.mjs — Apocrypha Deploy Script (rewritten)
+ * scripts/deploy.mjs — Apocrypha Deploy Script
  *
- * Local mode: copies to bot dir + reloads via CLI
- * Live mode:  Posts to Screeps API with SCREEPS_TOKEN
+ * Local:  Injects built code into MongoDB (Isaac's user code entry).
+ *         The engine picks it up on the next tick via timestamp detection.
+ * Live:   Posts to Screeps API with SCREEPS_TOKEN.
  */
 
-import { readFileSync, copyFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
+import { tmpdir } from 'os';
 
 const ROOT = dirname(dirname(new URL(import.meta.url).pathname));
 const DIST = resolve(ROOT, 'dist/main.js');
@@ -15,26 +17,39 @@ const DIST = resolve(ROOT, 'dist/main.js');
 const isLive = process.argv.includes('--live');
 const isLocal = process.argv.includes('--local') || !isLive;
 
-if (!existsSync(DIST)) {
-  console.error('[deploy] dist/main.js not found. Run `npm run build` first.');
+if (!isLocal && !isLive) {
+  console.error('[deploy] Use --local or --live');
   process.exit(1);
 }
 
-async function deployLocal() {
-  // Copy to local screeps bot directory
-  const botDir = resolve(ROOT, '.screeps/node_modules/screeps/bots/apocrypha');
-  mkdirSync(botDir, { recursive: true });
-  copyFileSync(DIST, resolve(botDir, 'main.js'));
-  console.log('[deploy] ✓ Copied to', botDir);
+const code = readFileSync(DIST, 'utf-8');
 
-  // Reload bot via CLI (needs a running tmux CLI session)
-  // Start CLI if not running: tmux new-session -d -s screeps-cli 'cd apocrypha && docker compose exec screeps screeps-launcher cli'
+async function deployLocal() {
+  const isaacId = '6a174d5e359b46002e1d39a0';
+
+  // Write mongosh script to a temp file (avoids shell escaping hell)
+  const escaped = JSON.stringify(code);
+  const script = `
+    db['users.code'].updateOne(
+      {user: '${isaacId}'},
+      {$set: {modules: {main: ${escaped}}, timestamp: new Date().getTime(), activeWorld: true, activeSim: true}},
+      {upsert: true}
+    );
+    var c = db['users.code'].findOne({user: '${isaacId}'});
+    print(c && c.modules && c.modules.main ? c.modules.main.length + ' chars' : 'MISSING');
+  `;
+
+  const tmpFile = resolve(tmpdir(), `apocrypha-deploy-${Date.now()}.js`);
+  writeFileSync(tmpFile, script, 'utf-8');
+
   try {
-    execSync('tmux send-keys -t screeps-cli -l "bots.reload(\\"apocrypha\\")" && tmux send-keys -t screeps-cli Enter',
-      { cwd: ROOT, timeout: 5000 });
-    console.log('[deploy] ✓ Bot reloaded');
-  } catch (e) {
-    console.log('[deploy] ⚠ Reload failed — restart server or reload CLI manually');
+    const result = execSync(
+      `docker exec -i apocrypha-mongo mongosh --quiet screeps < "${tmpFile}"`,
+      { encoding: 'utf-8', timeout: 15000, shell: true }
+    ).trim();
+    console.log(`[deploy] ✓ MongoDB updated (${(code.length / 1024).toFixed(1)}KB) → ${result}`);
+  } finally {
+    if (existsSync(tmpFile)) unlinkSync(tmpFile);
   }
 }
 
@@ -45,7 +60,6 @@ async function deployLive() {
     process.exit(1);
   }
 
-  const code = readFileSync(DIST, 'utf-8');
   const resp = await fetch('https://screeps.com/api/user/code', {
     method: 'POST',
     headers: {
