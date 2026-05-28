@@ -46,9 +46,10 @@ export function loop(): void {
     console.log('[apocrypha] Colony online');
   }
 
-  // --- Cleanup dead creep memory ---
+  // --- Cleanup dead creep memory (log before deleting) ---
   for (var name in Memory.creeps) {
     if (!(name in Game.creeps)) {
+      telemetry.logCreepDeath(name, Memory.creeps[name]);
       delete Memory.creeps[name];
     }
   }
@@ -95,6 +96,9 @@ export function loop(): void {
 
   // --- Telemetry ---
   telemetry.collectStats();
+
+  // --- Log cleanup (every 10k ticks) ---
+  telemetry.cleanCreepLog();
 
   // --- Mantra ---
   mantra.run();

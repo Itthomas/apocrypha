@@ -5,7 +5,7 @@
  * Active only when there's surplus energy or the room is between build phases.
  */
 
-import { trackHarvest } from '../telemetry';
+import { trackHarvest, trackUpgrade } from '../telemetry';
 
 interface UpgraderMemory {
   role: 'upgrader';
@@ -28,7 +28,9 @@ export function run(creep: Creep): boolean {
     const controller = creep.room.controller;
     if (controller) {
       const result = creep.upgradeController(controller);
-      if (result === ERR_NOT_IN_RANGE) {
+      if (result === OK) {
+        trackUpgrade(creep, creep.getActiveBodyparts(WORK));
+      } else if (result === ERR_NOT_IN_RANGE) {
         creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } });
       }
       return true;

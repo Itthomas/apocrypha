@@ -10,7 +10,7 @@
  * while the colony can't afford to spawn new creeps.
  */
 
-import { trackHarvest } from '../telemetry';
+import { trackHarvest, trackBuild, trackRepair, trackUpgrade } from '../telemetry';
 
 /** Minimum room energy before builders are allowed to build */
 const BUILD_ENERGY_FLOOR = 300;
@@ -90,6 +90,12 @@ export function run(creep: Creep): boolean {
     if (result === ERR_NOT_IN_RANGE) {
       creep.moveTo(target, { visualizePathStyle: { stroke: '#00ff00' } });
     } else if (result === OK) {
+      const workParts = creep.getActiveBodyparts(WORK);
+      if (target instanceof ConstructionSite) {
+        trackBuild(creep, workParts * 5);
+      } else {
+        trackRepair(creep, workParts);
+      }
       // Clear target if finished
       if ((target instanceof ConstructionSite && !Game.getObjectById(target.id)) ||
           (target instanceof Structure && target.hits >= target.hitsMax)) {

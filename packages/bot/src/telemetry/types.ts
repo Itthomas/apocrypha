@@ -63,3 +63,52 @@ export interface ColonyStats {
 
 /** How many ticks between stats snapshots */
 export const STATS_INTERVAL = 20;
+
+/** How often to clean the death log */
+export const LOG_CLEANUP_INTERVAL = 10000;
+
+/** Max age of log entries before cleanup */
+export const LOG_MAX_AGE = 20000;
+
+// ── Per-creep lifetime stats ──
+
+/** Counters tracked in creep.memory.stats */
+export interface CreepStats {
+  energyHarvested: number;
+  energyDelivered: number;
+  energyUpgraded: number;
+  energyBuilt: number;
+  energyRepaired: number;
+  spawnTick: number;
+}
+
+/** Written to Memory.creepLog on creep death */
+export interface DeathLogEntry {
+  name: string;
+  role: string;
+  body: string[];       // body part types
+  spawned: number;       // tick spawned
+  died: number;          // tick died
+  ticksLived: number;
+  stats: CreepStats;
+}
+
+/** Initialize creep stats in memory on first tick */
+export function initCreepStats(creep: Creep): void {
+  if (!creep.memory.stats) {
+    creep.memory.stats = {
+      energyHarvested: 0,
+      energyDelivered: 0,
+      energyUpgraded: 0,
+      energyBuilt: 0,
+      energyRepaired: 0,
+      spawnTick: Game.time,
+    };
+  }
+}
+
+/** Track energy harvested by a specific creep */
+export function trackCreepHarvest(creep: Creep, amount: number): void {
+  initCreepStats(creep);
+  creep.memory.stats.energyHarvested += amount;
+}

@@ -134,3 +134,82 @@ export function collectStats(): void {
 
   Memory.stats = stats;
 }
+
+// ── Per-creep lifetime stat tracking ──
+// These are called by role modules to accumulate per-creep counters.
+// On death, counters are flushed to Memory.creepLog by main.ts.
+
+import type { DeathLogEntry } from './types';
+import { LOG_CLEANUP_INTERVAL, LOG_MAX_AGE } from './types';
+
+/** Record energy delivered to spawn/extensions/towers */
+export function trackDelivery(creep: Creep, amount: number): void {
+  if (!creep.memory.stats) {
+    creep.memory.stats = { energyHarvested: 0, energyDelivered: 0, energyUpgraded: 0, energyBuilt: 0, energyRepaired: 0, spawnTick: Game.time };
+  }
+  creep.memory.stats.energyDelivered += amount;
+}
+
+/** Record energy spent upgrading controller */
+export function trackUpgrade(creep: Creep, amount: number): void {
+  if (!creep.memory.stats) {
+    creep.memory.stats = { energyHarvested: 0, energyDelivered: 0, energyUpgraded: 0, energyBuilt: 0, energyRepaired: 0, spawnTick: Game.time };
+  }
+  creep.memory.stats.energyUpgraded += amount;
+}
+
+/** Record energy spent building */
+export function trackBuild(creep: Creep, amount: number): void {
+  if (!creep.memory.stats) {
+    creep.memory.stats = { energyHarvested: 0, energyDelivered: 0, energyUpgraded: 0, energyBuilt: 0, energyRepaired: 0, spawnTick: Game.time };
+  }
+  creep.memory.stats.energyBuilt += amount;
+}
+
+/** Record energy spent repairing */
+export function trackRepair(creep: Creep, amount: number): void {
+  if (!creep.memory.stats) {
+    creep.memory.stats = { energyHarvested: 0, energyDelivered: 0, energyUpgraded: 0, energyBuilt: 0, energyRepaired: 0, spawnTick: Game.time };
+  }
+  creep.memory.stats.energyRepaired += amount;
+}
+
+// ── Death log & cleanup ──
+
+/** Append a dead creep's lifetime stats to Memory.creepLog */
+export function logCreepDeath(name: string, memory: any): void {
+  const stats = memory.stats || { energyHarvested: 0, energyDelivered: 0, energyUpgraded: 0, energyBuilt: 0, energyRepaired: 0, spawnTick: Game.time };
+  const entry: DeathLogEntry = {
+    name,
+    role: memory.role || 'unknown',
+    body: memory._body || [],
+    spawned: stats.spawnTick || Game.time,
+    died: Game.time,
+    ticksLived: Game.time - (stats.spawnTick || Game.time),
+    stats: {
+      energyHarvested: stats.energyHarvested || 0,
+      energyDelivered: stats.energyDelivered || 0,
+      energyUpgraded: stats.energyUpgraded || 0,
+      energyBuilt: stats.energyBuilt || 0,
+      energyRepaired: stats.energyRepaired || 0,
+      spawnTick: stats.spawnTick || 0,
+    },
+  };
+
+  if (!Memory.creepLog) Memory.creepLog = [];
+  Memory.creepLog.push(entry);
+}
+
+/** Remove log entries older than LOG_MAX_AGE ticks */
+export function cleanCreepLog(): void {
+  if (Game.time % LOG_CLEANUP_INTERVAL !== 0) return;
+  if (!Memory.creepLog) return;
+
+  const cutoff = Game.time - LOG_MAX_AGE;
+  const before = Memory.creepLog.length;
+  Memory.creepLog = Memory.creepLog.filter((e: DeathLogEntry) => e.died > cutoff);
+  const removed = before - Memory.creepLog.length;
+  if (removed > 0) {
+    console.log('[cleanup] Removed ' + removed + ' old death log entries (' + Memory.creepLog.length + ' remaining)');
+  }
+}

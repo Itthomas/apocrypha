@@ -6,7 +6,7 @@
  * At higher RCL, harvesters focus on harvesting and haulers handle transport.
  */
 
-import { trackHarvest } from '../telemetry';
+import { trackHarvest, trackCreepHarvest, trackDelivery } from '../telemetry';
 
 /** Memory shape for harvester creeps */
 interface HarvesterMemory {
@@ -94,7 +94,10 @@ export function run(creep: Creep): boolean {
     });
 
     if (target) {
-      if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+      const result = creep.transfer(target, RESOURCE_ENERGY);
+      if (result === OK) {
+        trackDelivery(creep, creep.getActiveBodyparts(CARRY) * 50);
+      } else if (result === ERR_NOT_IN_RANGE) {
         creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
       }
       return true;
@@ -126,7 +129,9 @@ export function run(creep: Creep): boolean {
   if (result === ERR_NOT_IN_RANGE) {
     creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
   } else if (result === OK) {
-    trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
+    const amount = creep.getActiveBodyparts(WORK) * 2;
+    trackHarvest(creep.room.name, amount);
+    trackCreepHarvest(creep, amount);
   }
 
   return true;
