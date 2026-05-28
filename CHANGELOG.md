@@ -2,6 +2,13 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-27] Filter unreachable sources in harvester assignment
+**Category:** creep
+**What changed:** Added `isSourceReachable()` check in `role.harvester` — skips sources with all four adjacent tiles being walls (TERRAIN_MASK_WALL). Also added `ERR_NO_PATH` detection from `moveTo` to trigger reassignment when pathfinding fails.
+**Why:** Source at (41,46) in W7N4 is completely walled off on all cardinal tiles. `assignSource` was assigning harvesters to it, permanently wasting them. Monitor showed "zero energy harvested in stats window" with full sources nearby.
+**Result:** Harvesting resumed — spawn energy recovered from 56→174 within ~80 ticks. "Zero harvested" alert cleared on next monitor run.
+**Refs:** https://docs.screeps.com/api/#Room.getTerrain
+
 ## Format
 ```
 ### [YYYY-MM-DD] Brief summary

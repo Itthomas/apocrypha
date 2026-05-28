@@ -16,11 +16,27 @@ interface HarvesterMemory {
 }
 
 /**
+ * Check whether a source has at least one walkable adjacent tile.
+ * A source surrounded entirely by walls is unreachable.
+ */
+function isSourceReachable(source: Source): boolean {
+  const terrain = source.room.getTerrain();
+  const { x, y } = source.pos;
+  return (
+    terrain.get(x + 1, y) !== TERRAIN_MASK_WALL ||
+    terrain.get(x - 1, y) !== TERRAIN_MASK_WALL ||
+    terrain.get(x, y + 1) !== TERRAIN_MASK_WALL ||
+    terrain.get(x, y - 1) !== TERRAIN_MASK_WALL
+  );
+}
+
+/**
  * Assign a source to this harvester if not already assigned.
+ * Only considers sources with at least one walkable adjacent tile.
  */
 function assignSource(creep: Creep): Id<Source> | null {
   const room = creep.room;
-  const sources = room.find(FIND_SOURCES);
+  const sources = room.find(FIND_SOURCES).filter(isSourceReachable);
 
   if (sources.length === 0) return null;
 
@@ -127,7 +143,11 @@ export function run(creep: Creep): boolean {
 
   const result = creep.harvest(source);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+    const moveResult = creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+    if (moveResult === ERR_NO_PATH) {
+      // Source may be walled off — reassign
+      mem.sourceId = undefined;
+    }
   } else if (result === OK) {
     const amount = creep.getActiveBodyparts(WORK) * 2;
     trackHarvest(creep.room.name, amount);
