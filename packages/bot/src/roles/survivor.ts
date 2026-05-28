@@ -32,8 +32,6 @@ interface SurvivorMemory {
   task: Task;
   /** Locked source ID — don't switch mid-trip */
   sourceId?: Id<Source>;
-  /** Locked construction target — don't switch mid-trip */
-  buildTargetId?: Id<ConstructionSite>;
   /** Last task switch tick — prevents rapid switching */
   taskLockedUntil: number;
 }
@@ -181,43 +179,33 @@ function doDeliver(creep: Creep, mem: SurvivorMemory): boolean {
 // ── Task: Build ──
 
 function doBuild(creep: Creep, mem: SurvivorMemory): boolean {
-  // Validate current build target
-  if (mem.buildTargetId) {
-    const target = Game.getObjectById(mem.buildTargetId);
-    if (!target) mem.buildTargetId = undefined;
-  }
-
-  // Find or refresh build target
-  if (!mem.buildTargetId) {
-    const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
-    sites.sort((a, b) => (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99));
-    if (sites.length > 0) {
-      mem.buildTargetId = sites[0].id;
+  // ALWAYS interrupt building if spawn/extensions need energy and we have it
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    const hungry = creep.room.find(FIND_MY_STRUCTURES, {
+      filter: s =>
+        (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+        s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    });
+    if (hungry.length > 0) {
+      setTask(creep, Task.DELIVER, mem);
+      return doDeliver(creep, mem);
     }
   }
 
-  if (!mem.buildTargetId) {
-    // No construction sites — switch to harvest
+  // Find nearest construction site (no target lock — builders can switch freely)
+  const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
+  if (sites.length === 0) {
     if (canSwitchTask(mem)) setTask(creep, Task.HARVEST, mem);
     return false;
   }
 
-  const target = Game.getObjectById(mem.buildTargetId);
-  if (!target) {
-    mem.buildTargetId = undefined;
-    return true;
-  }
+  sites.sort((a, b) => (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99));
+  const target = sites[0];
 
   const result = creep.build(target);
   if (result === ERR_NOT_IN_RANGE) {
     creep.moveTo(target);
-  } else if (result === OK) {
-    // Check if finished
-    if (!Game.getObjectById(target.id)) {
-      mem.buildTargetId = undefined;
-    }
   } else if (result === ERR_NOT_ENOUGH_ENERGY) {
-    // Out of energy — go harvest
     if (canSwitchTask(mem)) setTask(creep, Task.HARVEST, mem);
   }
 
@@ -227,6 +215,19 @@ function doBuild(creep: Creep, mem: SurvivorMemory): boolean {
 // ── Task: Harvest ──
 
 function doHarvest(creep: Creep, mem: SurvivorMemory): boolean {
+  // ALWAYS deliver if spawn/extensions need energy and we have it to give
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 25) {
+    const hungry = creep.room.find(FIND_MY_STRUCTURES, {
+      filter: s =>
+        (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+        s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    });
+    if (hungry.length > 0) {
+      setTask(creep, Task.DELIVER, mem);
+      return doDeliver(creep, mem);
+    }
+  }
+
   const roomName = creep.room.name;
 
   // Check if we should switch to building (if sites exist and we have energy)
