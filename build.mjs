@@ -70,6 +70,14 @@ function screepsCrossModulePlugin(currentName) {
         // Resolve the import path relative to the importer
         const resolved = resolve(dirname(args.importer), args.path);
 
+        // Guard: if the resolved import is within the CURRENT module's directory
+        // tree, let esbuild bundle it normally — it's an intra-module import.
+        const currentEntryAbs = resolve(SRC, modules[currentName]);
+        const currentDir = dirname(currentEntryAbs);
+        if (resolved.startsWith(currentDir + '/')) {
+          return undefined; // intra-module, bundle internally
+        }
+
         // Find all matching modules, pick the deepest (most specific) match.
         // This prevents 'main' (in src/) from shadowing 'telemetry' (in src/telemetry/).
         let bestMatch = null;

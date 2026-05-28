@@ -3,14 +3,25 @@
  *
  * Builds construction sites and repairs damaged structures.
  * Withdraws energy from spawns/extensions, then seeks build/repair targets.
+ *
+ * ENERGY FLOOR: if room energy is below 300, the builder refuses to build
+ * and instead upgrades the controller (or harvests if empty). This prevents
+ * builders from starving the spawn queue by consuming energy for construction
+ * while the colony can't afford to spawn new creeps.
  */
 
 import { trackHarvest } from '../telemetry';
+
+/** Minimum room energy before builders are allowed to build */
+const BUILD_ENERGY_FLOOR = 300;
 
 interface BuilderMemory {
   role: 'builder';
   building: boolean;
   targetId?: Id<ConstructionSite | Structure>;
+  /** Ticks since last position change (stuck detection) */
+  stuckTicks?: number;
+  lastPos?: { x: number; y: number };
 }
 
 export function run(creep: Creep): boolean {
@@ -27,6 +38,18 @@ export function run(creep: Creep): boolean {
 
   // BUILD
   if (mem.building) {
+    // ENERGY FLOOR: refuse to build when room energy is below threshold.
+    // Building costs energy per WORK part per tick. At low energy levels
+    // this starves the spawn queue. Instead, upgrade the controller.
+    if (creep.room.energyAvailable < BUILD_ENERGY_FLOOR) {
+      if (creep.room.controller) {
+        if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+          creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
+        }
+      }
+      return true;
+    }
+
     // Priority: construction sites (by progress), then repairs (lowest hp first)
     let target: ConstructionSite | Structure | null = null;
 
@@ -49,7 +72,7 @@ export function run(creep: Creep): boolean {
       // Nothing to build/repair — fall back to upgrading
       if (creep.room.controller) {
         if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-          creep.moveTo(creep.room.controller);
+          creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
         }
       }
       return true;
@@ -77,11 +100,12 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // WITHDRAW energy
+  // WITHDRAW energy — but only from spawn/extensions that have meaningful amounts.
+  // Skip nearly-empty structures to avoid draining energy that should accumulate for spawning.
   const spawnOrExt = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
     filter: s =>
       (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-      s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+      s.store.getUsedCapacity(RESOURCE_ENERGY) >= 50
   });
 
   if (spawnOrExt) {
@@ -91,7 +115,15 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // Emergency: no stored energy — harvest from a source to bootstrap the colony
+  // No meaningful stored energy — upgrade controller until energy builds up
+  if (creep.room.controller) {
+    if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
+    }
+    return true;
+  }
+
+  // No controller somehow — harvest to at least do something
   const source = creep.pos.findClosestByPath(FIND_SOURCES);
   if (source) {
     const result = creep.harvest(source);
@@ -103,6 +135,5 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // No energy available, idle
   return false;
 }

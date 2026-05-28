@@ -35,14 +35,11 @@ function serverRunning() {
 /** Check if the colony has an active spawn */
 function colonyAlive() {
   try {
-    const result = mongoEval(`
-      var user = db.users.findOne({username:'${USERNAME}'});
-      if (!user) { print('NO_USER'); return; }
-      if (!user.active) { print('INACTIVE'); return; }
-      var spawn = db['rooms.objects'].findOne({user: user._id.toString(), type: 'spawn'});
-      if (!spawn) { print('NO_SPAWN'); return; }
-      print('ALIVE:' + spawn.room);
-    `);
+    const script = "var user = db.users.findOne({username:'" + USERNAME + "'}); if (!user) { print('NO_USER'); } else if (!user.active) { print('INACTIVE'); } else { var spawn = db['rooms.objects'].findOne({user: user._id.toString(), type: 'spawn'}); print(spawn ? 'ALIVE:' + spawn.room : 'NO_SPAWN'); }";
+    const result = execSync(
+      `docker exec apocrypha-mongo mongosh --quiet screeps --eval ${JSON.stringify(script)}`,
+      { encoding: 'utf-8', timeout: 5000, shell: true }
+    ).trim();
     return result.includes('ALIVE');
   } catch (e) {
     console.error('[recover] MongoDB query failed:', e.message);
@@ -52,8 +49,8 @@ function colonyAlive() {
 
 /** Respawn the colony */
 function respawn() {
-  // Kill any existing CLI, start fresh
-  execSync('tmux kill-session -t rec 2>/dev/null; sleep 1', { timeout: 3000 }).catch(() => {});
+  // Kill any existing CLI, start fresh (ignore errors if no session)
+  try { execSync('tmux kill-session -t rec 2>/dev/null || true', { timeout: 3000, shell: true }); } catch {}
 
   // Start CLI
   execSync(
@@ -72,8 +69,8 @@ function respawn() {
   // Set active to boolean true (bots.spawn sets it as timestamp)
   mongoEval(`db.users.updateOne({username:'${USERNAME}'},{$set:{active:true}})`);
 
-  // Kill CLI
-  execSync('tmux kill-session -t rec 2>/dev/null', { timeout: 2000 }).catch(() => {});
+  // Kill CLI (ignore errors)
+  try { execSync('tmux kill-session -t rec 2>/dev/null || true', { timeout: 2000, shell: true }); } catch {}
   console.log('[recover] ✓ Respawned in', ROOM);
 }
 
