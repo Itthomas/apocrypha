@@ -50,6 +50,7 @@ export function run(creep: Creep): boolean {
 
   // State transitions
   if (creep.store.getFreeCapacity() === 0 && mem.task !== Task.DELIVER) {
+    releaseClaim(creep);
     setTask(creep, Task.DELIVER, mem);
   }
   if (creep.store.getUsedCapacity() === 0 && mem.task === Task.DELIVER) {
@@ -137,42 +138,121 @@ function doBuild(creep: Creep, mem: SurvivorMemory): boolean {
   return true;
 }
 
+// ── Source slot claiming (prevents thrashing) ──
+
+interface SourceClaims {
+  [sourceId: string]: Record<string, string>; // "x,y" → creepName
+}
+
+/** Get or init the claims object */
+function getClaims(): SourceClaims {
+  if (!Memory.sourceClaims) Memory.sourceClaims = {};
+  return Memory.sourceClaims as SourceClaims;
+}
+
+/** Clean dead-creep claims */
+function cleanClaims(): void {
+  const claims = getClaims();
+  for (const sourceId in claims) {
+    for (const slot in claims[sourceId]) {
+      const name = claims[sourceId][slot];
+      if (!(name in Game.creeps)) delete claims[sourceId][slot];
+    }
+    if (Object.keys(claims[sourceId]).length === 0) delete claims[sourceId];
+  }
+}
+
+/** Get accessible slots for a source (adjacent non-wall tiles) */
+function getSlots(source: Source): {x: number, y: number}[] {
+  const slots: {x: number, y: number}[] = [];
+  const room = Game.rooms[source.pos.roomName];
+  if (!room) return slots;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      const x = source.pos.x + dx, y = source.pos.y + dy;
+      if (room.getTerrain().get(x, y) !== TERRAIN_MASK_WALL) {
+        slots.push({x, y});
+      }
+    }
+  }
+  return slots;
+}
+
+/** Try to claim a slot at a source. Returns the slot if claimed, null if full. */
+function claimSlot(creep: Creep, source: Source): {x: number, y: number} | null {
+  cleanClaims();
+  const claims = getClaims();
+  const srcClaims = claims[source.id] || {};
+  const slots = getSlots(source);
+
+  // Remove our own old claim at this source
+  for (const slot in srcClaims) {
+    if (srcClaims[slot] === creep.name) delete srcClaims[slot];
+  }
+
+  // Find an unclaimed slot
+  for (const slot of slots) {
+    const key = slot.x + ',' + slot.y;
+    if (!srcClaims[key]) {
+      srcClaims[key] = creep.name;
+      if (!claims[source.id]) claims[source.id] = {};
+      claims[source.id][key] = creep.name;
+      return slot;
+    }
+  }
+  return null;
+}
+
+/** Release a creep's claim on a source */
+function releaseClaim(creep: Creep): void {
+  const claims = getClaims();
+  for (const sourceId in claims) {
+    for (const slot in claims[sourceId]) {
+      if (claims[sourceId][slot] === creep.name) delete claims[sourceId][slot];
+    }
+    if (Object.keys(claims[sourceId]).length === 0) delete claims[sourceId];
+  }
+}
+
 // ── Task: Harvest ──
 
 function doHarvest(creep: Creep, mem: SurvivorMemory): boolean {
-  // ALWAYS deliver if spawn/extensions need energy and we have it to give
-  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 25) {
-    const hungry = creep.room.find(FIND_MY_STRUCTURES, {
-      filter: s =>
-        (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-        s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-    });
-    if (hungry.length > 0) {
+  // Only interrupt harvest to deliver if spawn is CRITICALLY low (<100e empty)
+  // Otherwise let the carry fill naturally for better throughput
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
+    const spawns = creep.room.find(FIND_MY_SPAWNS);
+    const spawnEmpty = spawns.some(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 200);
+    if (spawnEmpty) {
       setTask(creep, Task.DELIVER, mem);
+      releaseClaim(creep);
       return doDeliver(creep, mem);
     }
   }
 
-  // Check if we should switch to building (if sites exist and we have energy)
-  const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
-  if (sites.length > 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 25 && canSwitchTask(mem)) {
-    setTask(creep, Task.BUILD, mem);
-    return doBuild(creep, mem);
+  // Pick a source with available slots, nearest first
+  const sources = creep.room.find(FIND_SOURCES_ACTIVE)
+    .filter(s => s.energy > 0)
+    .sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));
+
+  let chosenSource: Source | null = null;
+  for (const s of sources) {
+    if (claimSlot(creep, s)) {
+      chosenSource = s;
+      break;
+    }
   }
 
-  // Always pick the nearest active source. No reservation for one-off refills.
-  const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
-    filter: s => s.energy > 0
-  });
-
-  if (!source) {
+  if (!chosenSource) {
+    // All sources full — upgrade controller
     if (canSwitchTask(mem)) setTask(creep, Task.UPGRADE, mem);
+    releaseClaim(creep);
     return false;
   }
 
-  const result = creep.harvest(source);
+  const result = creep.harvest(chosenSource);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(source);
+    creep.moveTo(chosenSource);
   } else if (result === OK) {
     trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
   }
