@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Fix monitor fallback user ID
+**Category:** infra
+**What changed:** Updated hardcoded fallback user ID in `scripts/monitor.mjs` from `6a17aa5d3ffd6c003118021b` to actual user ID `6a17b83bd1eb500033b3ddea`.
+**Why:** If the Mongo user lookup ever fails, the fallback needs to match the actual Screeps user or Redis memory lookups return empty.
+**Result:** Fallback now points to correct user.
+
 ### [2026-05-28] Fix trackCreepHarvest not exported from telemetry module
 **Category:** creep
 **What changed:** Re-exported `trackCreepHarvest` from `telemetry/index.ts`. It was defined in `types.ts` but never made available to external consumers like `role.harvester`.

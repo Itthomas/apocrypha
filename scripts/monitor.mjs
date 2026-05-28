@@ -22,7 +22,7 @@ const USER_ID = (() => {
     return id;
   } catch (e) {
     console.error('[monitor] Cannot find user — falling back to hardcoded ID');
-    return '6a17aa5d3ffd6c003118021b'; // fallback
+    return '6a17b83bd1eb500033b3ddea'; // fallback (actual user ID)
   }
 })();
 
