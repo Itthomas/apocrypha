@@ -27,6 +27,8 @@ type BatchFn = (room: Room) => number; // returns number of sites placed
 
 /** Place a construction site if one doesn't already exist at that position */
 function placeIfNew(room: Room, x: number, y: number, type: BuildableStructureConstant): boolean {
+  // Never place on wall terrain
+  if (room.getTerrain().get(x, y) === TERRAIN_MASK_WALL) return false;
   const existing = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
   if (existing.length > 0) return false;
   const structures = room.lookForAt(LOOK_STRUCTURES, x, y);
@@ -189,34 +191,35 @@ function placeStorage(room: Room): number {
 function getBatches(rcl: number): BatchFn[] {
   const batches: BatchFn[] = [];
 
-  // RCL 1: Roads
-  if (rcl >= 1) {
-    batches.push((room: Room) => {
-      const targets: RoomPosition[] = [];
-      for (const source of room.find(FIND_SOURCES)) targets.push(source.pos);
-      if (room.controller) targets.push(room.controller.pos);
-      return placeRoads(room, targets);
-    });
-  }
+  // RCL 1: No construction — upgrade controller with all energy
 
-  // RCL 2: Extensions + fill roads
+  // RCL 2: Extensions first, then roads, then containers
   if (rcl >= 2) {
+    // Batch 0: 5 extensions
     batches.push((room: Room) => placeExtensions(room, 5));
+    // Batch 1: roads spawn→sources + spawn→controller
     batches.push((room: Room) => {
       const targets: RoomPosition[] = [];
       for (const source of room.find(FIND_SOURCES)) targets.push(source.pos);
       if (room.controller) targets.push(room.controller.pos);
       return placeRoads(room, targets);
     });
+    // Batch 2: containers (one per source, one near spawn, one near controller)
+    batches.push((room: Room) => {
+      let placed = 0;
+      placed += (placeSourceContainers as BatchFn)(room);
+      if (countBuilt(room, STRUCTURE_CONTAINER) + countSites(room, STRUCTURE_CONTAINER) < 3) {
+        placed += (placeOverflowContainer as BatchFn)(room);
+        placed += (placeControllerContainer as BatchFn)(room);
+      }
+      return placed;
+    });
   }
 
-  // RCL 3: Source containers, more extensions, tower, overflow, controller container
+  // RCL 3: More extensions, tower
   if (rcl >= 3) {
-    batches.push(placeSourceContainers);
     batches.push((room: Room) => placeExtensions(room, 10));
     batches.push(placeTower);
-    batches.push(placeOverflowContainer);
-    batches.push(placeControllerContainer);
   }
 
   // RCL 4+: Storage + full extensions
