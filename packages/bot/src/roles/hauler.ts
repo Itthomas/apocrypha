@@ -6,6 +6,8 @@
  * At RCL 3 with extensions and towers, efficient logistics matters.
  */
 
+import { trackHarvest } from '../telemetry';
+
 interface HaulerMemory {
   role: 'hauler';
   hauling: boolean;
@@ -90,8 +92,11 @@ export function run(creep: Creep): boolean {
   // If empty and no dropped energy, harvest from a source to get energy for building
   const source = creep.pos.findClosestByPath(FIND_SOURCES);
   if (source) {
-    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+    const result = creep.harvest(source);
+    if (result === ERR_NOT_IN_RANGE) {
       creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+    } else if (result === OK) {
+      trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
     }
     return true;
   }

@@ -5,6 +5,8 @@
  * Active only when there's surplus energy or the room is between build phases.
  */
 
+import { trackHarvest } from '../telemetry';
+
 interface UpgraderMemory {
   role: 'upgrader';
   upgrading: boolean;
@@ -70,8 +72,11 @@ export function run(creep: Creep): boolean {
     // Emergency: no stored or dropped energy — harvest from a source
     const source = creep.pos.findClosestByPath(FIND_SOURCES);
     if (source) {
-      if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+      const result = creep.harvest(source);
+      if (result === ERR_NOT_IN_RANGE) {
         creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+      } else if (result === OK) {
+        trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
       }
       return true;
     }
