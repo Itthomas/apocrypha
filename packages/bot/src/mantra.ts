@@ -52,7 +52,8 @@ interface MantraState {
 }
 
 export function run(): void {
-  if (!Memory.mantra) {
+  // Detect old format (only had fragmentIndex) or first run
+  if (!Memory.mantra || Memory.mantra.lineIndex === undefined) {
     Memory.mantra = { lineIndex: 0, fragmentIndex: 0 };
   }
 
