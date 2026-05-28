@@ -22,6 +22,21 @@ if (!isLocal && !isLive) {
   process.exit(1);
 }
 
+function mongoEval(expr) {
+  return execSync(
+    `docker exec apocrypha-mongo mongosh --quiet screeps --eval ${JSON.stringify(expr)}`,
+    { encoding: 'utf-8', timeout: 5000 }
+  ).trim();
+}
+
+/** Auto-detect Isaac's user ID from MongoDB */
+function getUserId() {
+  const result = mongoEval("var u = db.users.findOne({username:'MaximumEdgeLord'}); print(u ? u._id.toString() : 'MISSING');");
+  const id = result.split('\n').pop().trim();
+  if (!id || id === 'MISSING') throw new Error('User MaximumEdgeLord not found in MongoDB');
+  return id;
+}
+
 /** Read all .js module files from dist/modules/ */
 function readModules() {
   const modules = {};
@@ -36,23 +51,42 @@ function readModules() {
 }
 
 async function deployLocal() {
-  const isaacId = '6a174d5e359b46002e1d39a0';
+  const isaacId = getUserId();
+  console.log(`[deploy] User: MaximumEdgeLord (${isaacId})`);
   const modules = readModules();
   const moduleList = Object.keys(modules);
 
   if (!modules.main) throw new Error('main module missing from build');
 
-  // Build the MongoDB update with all modules
+  // Build the MongoDB update with all modules.
+  // Screeps private server stores code under user[user.branch] (e.g. user["default"]).
+  // We write to both the branch schema AND the top level for compatibility.
   const escaped = JSON.stringify(modules);
+  const ts = Date.now();
   const script = `
     var modules = ${escaped};
     db['users.code'].updateOne(
       {user: '${isaacId}'},
-      {$set: {modules: modules, timestamp: new Date().getTime(), activeWorld: true, activeSim: true}},
+      {$set: {
+        modules: modules,
+        branch: 'default',
+        activeWorld: true,
+        activeSim: true,
+        timestamp: ${ts}
+      }},
+      {upsert: true}
+    );
+    // Also write to the branch subdocument that the engine actually reads
+    db['users.code'].updateOne(
+      {user: '${isaacId}'},
+      {$set: {default: {modules: modules, timestamp: ${ts}}}},
       {upsert: true}
     );
     var c = db['users.code'].findOne({user: '${isaacId}'});
-    print(c && c.modules ? Object.keys(c.modules).join(',') : 'MISSING');
+    var modList = [];
+    if (c.default && c.default.modules) modList = Object.keys(c.default.modules);
+    else if (c.modules) modList = Object.keys(c.modules);
+    print(modList.join(','));
   `;
 
   const tmpFile = resolve(tmpdir(), `apocrypha-deploy-${Date.now()}.js`);

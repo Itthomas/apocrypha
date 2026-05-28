@@ -11,7 +11,20 @@ import { resolve, dirname } from 'path';
 
 const ROOT = dirname(dirname(new URL(import.meta.url).pathname));
 const STATE_FILE = resolve(ROOT, '.screeps/agent-state.json');
-const USER_ID = '6a174d5e359b46002e1d39a0';
+const USER_ID = (() => {
+  try {
+    const result = execSync(
+      'docker exec apocrypha-mongo mongosh --quiet screeps --eval "var u = db.users.findOne({username:\\"MaximumEdgeLord\\"}); print(u ? u._id.toString() : \\"MISSING\\");"',
+      { encoding: 'utf-8', timeout: 5000, shell: true }
+    ).trim();
+    const id = result.split('\n').pop().trim();
+    if (!id || id === 'MISSING') throw new Error('not found');
+    return id;
+  } catch (e) {
+    console.error('[monitor] Cannot find user — falling back to hardcoded ID');
+    return '6a17aa5d3ffd6c003118021b'; // fallback
+  }
+})();
 
 // --- Helpers ---
 
