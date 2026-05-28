@@ -68,7 +68,7 @@ function analyze(stats, prev) {
 
     // Energy economy
     if (e.harvested === 0 && c.total > 0) {
-      issues.push(`⚠️ ${name}: zero energy harvested in stats window — harvesters may be stuck`);
+      issues.push(`⚠️ ${name}: zero energy harvested in stats window — miners may be stuck`);
     }
     if (e.available === e.capacity && room.rcl < 8) {
       notes.push(`💡 ${name}: energy full — consider more upgraders or builders`);
@@ -87,12 +87,12 @@ function analyze(stats, prev) {
 
     // Role balance
     const byRole = c.byRole || {};
-    const harvesters = byRole.harvester || 0;
+    const miners = byRole.harvester || 0;
     const builders = byRole.builder || 0;
     const upgraders = byRole.upgrader || 0;
 
-    if (harvesters === 0 && c.total > 0) {
-      issues.push(`🚨 ${name}: no harvesters — energy income will stop`);
+    if (miners === 0 && c.total > 0) {
+      issues.push(`🚨 ${name}: no miners — energy income will stop`);
     }
     if (room.constructionSites > 0 && builders === 0) {
       notes.push(`💡 ${name}: ${room.constructionSites} construction sites, no builders`);
