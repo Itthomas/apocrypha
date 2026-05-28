@@ -7,7 +7,7 @@
  *   - Carry is full and task is HARVEST (→ switch to next priority task)
  *   - Task target no longer exists (→ switch to next priority task)
  *
- * Priority order for switching: DELIVER → BUILD → UPGRADE (→ HARVEST if nothing else)
+ * Priority order for switching: DELIVER → REPAIR → BUILD → UPGRADE (→ HARVEST if nothing else)
  * HARVEST is the fallback — always available if sources have energy.
  *
  * Source slot claiming prevents thrashing (only checked during HARVEST).
@@ -18,13 +18,16 @@ import { trackHarvest } from '../telemetry';
 enum TASK {
   HARVEST = 0,
   DELIVER = 1,
-  BUILD = 2,
-  UPGRADE = 3,
+  REPAIR = 2,
+  BUILD = 3,
+  UPGRADE = 4,
 }
 
 interface SurvivorMemory {
   role: 'survivor';
   task: TASK;
+  /** Locked repair target — stick until done or out of energy */
+  repairTargetId?: Id<Structure>;
 }
 
 // ── Source slot claiming ──
@@ -92,7 +95,18 @@ function chooseTask(creep: Creep): TASK {
     return TASK.DELIVER;
   }
 
-  // BUILD: construction sites exist AND we have energy or there are sites nearby
+  // REPAIR: damaged structures below 50% hp (excluding walls and ramparts)
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    const damaged = creep.room.find(FIND_STRUCTURES, {
+      filter: s =>
+        s.hits < s.hitsMax * 0.5 &&
+        s.structureType !== STRUCTURE_WALL &&
+        s.structureType !== STRUCTURE_RAMPART
+    });
+    if (damaged.length > 0) return TASK.REPAIR;
+  }
+
+  // BUILD: construction sites exist AND we have energy
   if (creep.room.find(FIND_CONSTRUCTION_SITES).length > 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
     return TASK.BUILD;
   }
@@ -109,6 +123,7 @@ function chooseTask(creep: Creep): TASK {
 function setTask(creep: Creep, task: TASK): void {
   const mem = creep.memory as SurvivorMemory;
   if (mem.task !== TASK.HARVEST) releaseClaim(creep);
+  if (mem.task !== TASK.REPAIR) mem.repairTargetId = undefined;
   mem.task = task;
 }
 
@@ -149,6 +164,41 @@ export function run(creep: Creep): boolean {
       return run(creep);
     }
     return doDeliver(creep);
+  }
+
+  // REPAIR: repair nearest damaged structure until full or out of energy
+  if (mem.task === TASK.REPAIR) {
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      setTask(creep, TASK.HARVEST);
+      return run(creep);
+    }
+    // Validate current repair target
+    if (mem.repairTargetId) {
+      const target = Game.getObjectById(mem.repairTargetId);
+      if (!target || target.hits >= target.hitsMax) mem.repairTargetId = undefined;
+    }
+    // Find nearest repairable structure below 50% (exclude walls/ramparts)
+    if (!mem.repairTargetId) {
+      const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+        filter: s =>
+          s.hits < s.hitsMax * 0.5 &&
+          s.structureType !== STRUCTURE_WALL &&
+          s.structureType !== STRUCTURE_RAMPART
+      });
+      if (damaged) mem.repairTargetId = damaged.id;
+    }
+    if (!mem.repairTargetId) {
+      const next = chooseTask(creep);
+      if (next !== TASK.REPAIR) { setTask(creep, next); return run(creep); }
+      return false;
+    }
+    const target = Game.getObjectById(mem.repairTargetId);
+    if (!target) { mem.repairTargetId = undefined; return false; }
+    const result = creep.repair(target);
+    if (result === ERR_NOT_IN_RANGE) creep.moveTo(target);
+    // If fully repaired, clear target
+    if (target.hits >= target.hitsMax) mem.repairTargetId = undefined;
+    return true;
   }
 
   // BUILD: keep building until carry empty or no sites
