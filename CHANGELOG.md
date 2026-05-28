@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Survivor: bypass task lock when nothing to deliver
+**Category:** bot
+**What changed:** Survivors in DELIVER task now unconditionally switch to the next task when spawn + extensions are both full, instead of waiting for `taskLockedUntil` to expire. Removed `canSwitchTask(mem)` guard in `doDeliver` step 1c.
+**Why:** All 4 survivors stuck with full bags, spawn at 300/300 (full), task=DELIVER, locked for 20 ticks. They burned ticks doing nothing — couldn't harvest (bags full), couldn't deliver (no hungry structures), couldn't switch (lock held). Zero energy harvested and zero controller progress for the entire window. The lock exists to prevent thrashing between equivalent tasks, not to force idling when the current task is impossible.
+**Result:** Survivors immediately switched to UPGRADE → controller progress resumes. Harvest tracking resumes when they cycle back to HARVEST after spending energy.
+
 ### [2026-05-28] Monitor: RCL-aware role checks (survivors at low RCL)
 **Category:** monitor
 **What changed:** Fixed `scripts/monitor.mjs` — role balance checks were hardcoded to look for `harvester/miner/builder/upgrader` roles, but at RCL 1-2 only `survivor` creeps exist (generalists that do everything). Now uses RCL-dependent lookups: survivors count as harvesters, builders, and upgraders when RCL ≤ 2.

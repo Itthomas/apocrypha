@@ -97,11 +97,9 @@ function doDeliver(creep: Creep, mem: SurvivorMemory): boolean {
     return true;
   }
 
-  // 1c. Nothing to deliver → find next task
-  if (canSwitchTask(mem)) {
-    const nextTask = findHighestPriorityTask(creep);
-    setTask(creep, nextTask, mem);
-  }
+  // 1c. Nothing to deliver → switch tasks immediately (no lock delay when idle)
+  const nextTask = findHighestPriorityTask(creep);
+  setTask(creep, nextTask, mem);
   return true;
 }
 
