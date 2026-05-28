@@ -55,23 +55,59 @@ const baseConfig = {
   }
 };
 
+/**
+ * Esbuild plugin: force cross-module imports to use require() instead of bundling.
+ * Only intercepts relative imports (starting with ".") that resolve to another module.
+ * When role.builder.ts imports from '../telemetry', the output becomes require('telemetry').
+ */
+function screepsCrossModulePlugin(currentName) {
+  return {
+    name: 'screeps-cross-module',
+    setup(build) {
+      // Only intercept relative imports (./foo or ../bar)
+      build.onResolve({ filter: /^\./ }, (args) => {
+        // Resolve the import path relative to the importer
+        const resolved = resolve(dirname(args.importer), args.path);
+
+        // Find all matching modules, pick the deepest (most specific) match.
+        // This prevents 'main' (in src/) from shadowing 'telemetry' (in src/telemetry/).
+        let bestMatch = null;
+        let bestDepth = 0;
+        for (const [modName, modEntry] of Object.entries(modules)) {
+          if (modName === currentName) continue;
+          const modEntryAbs = resolve(SRC, modEntry);
+          const modDir = dirname(modEntryAbs);
+          // Match if resolved path equals the module entry file OR its directory
+          if (resolved === modEntryAbs || resolved === modDir || resolved.startsWith(modDir + '/')) {
+            if (modDir.length > bestDepth) {
+              bestDepth = modDir.length;
+              bestMatch = modName;
+            }
+          }
+        }
+
+        if (bestMatch) {
+          return { path: bestMatch, external: true };
+        }
+
+        return undefined; // not a cross-module import, let esbuild bundle normally
+      });
+    },
+  };
+}
+
 async function buildModule(name, entry) {
   const entryAbs = resolve(SRC, entry);
 
-  // All OTHER module entry points are external (become require() calls)
-  const external = allEntries
-    .filter(e => e !== entryAbs)
-    .map(e => e + '.ts') // also match .ts extension
-  external.push(...allEntries.filter(e => e !== entryAbs)); // match without .ts too
-
-  // Also mark Screeps module names as external (in case of require('role.harvester'))
+  // Screeps module names that should be kept as require() calls (used by main.ts)
   const externalModules = Object.keys(modules).filter(m => m !== name);
 
   await esbuild.build({
     ...baseConfig,
     entryPoints: [entryAbs],
     outfile: resolve(OUT, name + '.js'),
-    external: externalModules, // Screeps module names → require() calls
+    external: externalModules,
+    plugins: [screepsCrossModulePlugin(name)],
   });
 }
 
