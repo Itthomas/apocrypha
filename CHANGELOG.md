@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Stale deploy: rebuilt and redeployed from latest TypeScript source
+**Category:** deploy
+**What changed:** Rebuilt and redeployed all 9 modules from current TypeScript source. The deployed code in MongoDB was an older bundled build that lacked `isSourceReachable`, `safeTiers` spawn fallback, hauler drop/self-deliver logic, emergency harvester fallback, and had a hardcoded `150` body base cost instead of `200`.
+**Why:** Zero energy harvested in W7N4 (energy at 94/300). The stale deploy meant several fixes already in source weren't running in production.
+**Result:** Energy recovered from 94→184/300 in ~140 ticks. Colony healthy — no more zero-harvest alerts.
+
 ### [2026-05-28] Fix monitor fallback user ID
 **Category:** infra
 **What changed:** Updated hardcoded fallback user ID in `scripts/monitor.mjs` from `6a17aa5d3ffd6c003118021b` to actual user ID `6a17b83bd1eb500033b3ddea`.
