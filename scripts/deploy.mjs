@@ -6,7 +6,7 @@
  * Live:   Posts to Screeps API with SCREEPS_TOKEN.
  */
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { tmpdir } from 'os';
@@ -100,6 +100,23 @@ async function deployLocal() {
     console.log(`[deploy] ✓ ${moduleList.length} modules → ${result}`);
   } finally {
     if (existsSync(tmpFile)) unlinkSync(tmpFile);
+  }
+
+  // Also sync modules to bot directory (bot users load from filesystem, not MongoDB)
+  try {
+    const botDir = resolve(ROOT, '.screeps/node_modules/screeps/bots/apocrypha');
+    mkdirSync(botDir, { recursive: true });
+    for (const [name, code] of Object.entries(modules)) {
+      if (name === 'main') {
+        writeFileSync(resolve(botDir, 'main.js'), code);
+      }
+      writeFileSync(resolve(botDir, name + '.js'), code);
+    }
+    // Reload bot via CLI
+    execSync('tmux kill-session -t rel 2>/dev/null; sleep 1; tmux new-session -d -s rel "cd ' + ROOT + ' && docker compose exec screeps screeps-launcher cli"; sleep 3; echo "bots.reload(\\"apocrypha\\")" | tmux load-buffer -; tmux paste-buffer -t rel; tmux send-keys -t rel Enter', { timeout: 10000, shell: true });
+    console.log('[deploy] ✓ Bot dir synced + reloaded');
+  } catch (e) {
+    console.log('[deploy] ⚠ Bot dir sync failed — run manually: cp dist/modules/*.js .screeps/node_modules/screeps/bots/apocrypha/');
   }
 }
 
