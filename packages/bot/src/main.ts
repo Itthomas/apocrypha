@@ -36,7 +36,7 @@ function getRoleModule(role: string) {
 function countMiners(room: Room): number {
   var count = 0;
   room.find(FIND_MY_CREEPS).forEach(function(c) {
-    if (c.memory.role === 'miner') count++;
+    if (c.memory.role === 'miner' || c.memory.role === 'survivor') count++;
   });
   return count;
 }

@@ -4,10 +4,15 @@
  * Uses bodyDesigner for per-role body comps based on RCL and energy.
  * Manages spawn queues with quota limits and spawn gates.
  *
+ * RCL 1-2: Survivors only (max 4). Generalists that do everything.
+ * RCL 3+: Specialized roles appear. Survivors drop to max 2, with smart
+ *   spawn criteria — only spawn when energy economy is genuinely faltering,
+ *   not when a miner simply ages out and is being replaced.
+ *
  * Spawn gates:
+ * - survivor (RCL 3+): only when energy economy is threatened (not just miner death)
  * - builder: only if overflow container ≥50% full AND construction sites exist, max 2
  * - upgrader: only if controller container is full, max 1
- * - survivor: only if 0 miners, max 2
  * - miner: max 2 (one per source)
  * - hauler: max 3 at RCL 3+, only if source containers exist
  */
@@ -25,97 +30,121 @@ interface SpawnQuota {
  * Get spawn quotas for a room based on RCL.
  */
 function getQuotas(rcl: number): SpawnQuota[] {
+  // RCL 1-2: survivors only
+  if (rcl <= 2) {
+    return [
+      { role: 'survivor', minimum: 2, maximum: 4 },
+    ];
+  }
+
+  // RCL 3+: specialized roles, survivors as backup
   const quotas: SpawnQuota[] = [
-    { role: 'miner',    minimum: 0, maximum: 2 },
+    { role: 'miner',    minimum: 1, maximum: 2 },
+    { role: 'hauler',   minimum: 1, maximum: 3 },
     { role: 'survivor', minimum: 0, maximum: 2 },
-    { role: 'hauler',   minimum: 0, maximum: 0 },
     { role: 'builder',  minimum: 0, maximum: 2 },
     { role: 'upgrader', minimum: 0, maximum: 1 },
   ];
 
-  switch (rcl) {
-    case 0:
-    case 1:
-      quotas[0] = { role: 'miner',    minimum: 2, maximum: 4 }; // walking miners at RCL 1
-      quotas[1] = { role: 'survivor', minimum: 0, maximum: 2 };
-      break;
-    case 2:
-      quotas[0] = { role: 'miner',    minimum: 2, maximum: 3 };
-      quotas[2] = { role: 'hauler',   minimum: 1, maximum: 2 };
-      quotas[3] = { role: 'builder',  minimum: 1, maximum: 2 };
-      break;
-    case 3:
-      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
-      quotas[2] = { role: 'hauler',   minimum: 2, maximum: 3 };
-      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
-      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 1 };
-      break;
-    case 4:
-    case 5:
-      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
-      quotas[2] = { role: 'hauler',   minimum: 2, maximum: 4 };
-      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
-      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 1 };
-      break;
-    default:
-      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
-      quotas[2] = { role: 'hauler',   minimum: 3, maximum: 5 };
-      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
-      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 2 };
+  if (rcl >= 5) {
+    quotas[1] = { role: 'hauler', minimum: 2, maximum: 4 };
+    quotas[4] = { role: 'upgrader', minimum: 0, maximum: 2 };
   }
 
   return quotas;
 }
 
-/** Check spawn gate conditions for a role */
-function spawnGate(role: string, room: Room): boolean {
+/** Smart survivor spawn gate for RCL 3+ */
+function survivorGateRcl3(room: Room): boolean {
+  const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+
+  // If 0 miners at all, definitely spawn survivor
+  if (miners.length === 0) return true;
+
+  // If we have at least 1 miner, check if the energy economy is actually struggling
+  // Don't spawn survivors just because a miner aged out — wait for the replacement
+
+  // Check if spawn is about to produce a miner (it's spawning or has energy)
+  const spawns = room.find(FIND_MY_SPAWNS);
+  const spawningMiner = spawns.some(s => {
+    if (!s.spawning) return false;
+    const spawningCreep = Game.creeps[s.spawning.name];
+    return spawningCreep && spawningCreep.memory.role === 'miner';
+  });
+
+  // If a miner is currently spawning, no survivor needed
+  if (spawningMiner) return false;
+
+  // Check energy economy: is spawn energy critically low AND not recovering?
+  const energyCap = room.energyCapacityAvailable;
+  const energyAvail = room.energyAvailable;
+  const energyRatio = energyAvail / energyCap;
+
+  // If energy is above 30% of capacity, system is healthy — no survivor needed
+  if (energyRatio > 0.3) return false;
+
+  // Check telemetry: has energy been flowing recently?
+  const stats = Memory.stats;
+  if (stats) {
+    const roomStats = stats.rooms?.[room.name];
+    if (roomStats) {
+      // If energy was harvested in the last stats window, system is working
+      if (roomStats.energy.harvested > 0) return false;
+    }
+  }
+
+  // Energy is low AND no recent harvests — economy is faltering
+  return energyAvail < 100; // Critical threshold
+}
+
+/** Build gate: overflow container must be ≥50% full */
+function builderGate(room: Room): boolean {
+  const sites = room.find(FIND_CONSTRUCTION_SITES);
+  if (sites.length === 0) return false;
+
   const spawns = room.find(FIND_MY_SPAWNS);
   if (spawns.length === 0) return false;
 
-  // Survivor gate: only if 0 miners exist
-  if (role === 'survivor') {
-    const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
-    return miners.length === 0;
+  const container = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+    filter: s => s.structureType === STRUCTURE_CONTAINER
+  })[0];
+  if (!container) {
+    // Allow builders at RCL 1-2 even without overflow container
+    return (room.controller?.level ?? 0) <= 2;
   }
 
-  // Builder gate: overflow container ≥50% full AND construction sites exist
-  if (role === 'builder') {
-    const sites = room.find(FIND_CONSTRUCTION_SITES);
-    if (sites.length === 0) return false;
-    const container = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    })[0];
-    if (!container) return false;
-    const store = (container as StructureContainer).store;
-    return store.getUsedCapacity(RESOURCE_ENERGY) >= store.getCapacity(RESOURCE_ENERGY) * 0.5;
-  }
-
-  // Upgrader gate: controller container is full
-  if (role === 'upgrader') {
-    const controller = room.controller;
-    if (!controller) return false;
-    const container = controller.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    })[0];
-    if (!container) return false;
-    const store = (container as StructureContainer).store;
-    return store.getFreeCapacity(RESOURCE_ENERGY) === 0;
-  }
-
-  // Hauler gate: source containers exist
-  if (role === 'hauler') {
-    const containers = room.find(FIND_STRUCTURES, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    });
-    return containers.length > 0;
-  }
-
-  return true;
+  const store = (container as StructureContainer).store;
+  return store.getUsedCapacity(RESOURCE_ENERGY) >= store.getCapacity(RESOURCE_ENERGY) * 0.5;
 }
 
-/**
- * Run spawn logic for one room. Call once per tick.
- */
+/** Upgrader gate: controller container must exist and be full */
+function upgraderGate(room: Room): boolean {
+  const controller = room.controller;
+  if (!controller) return false;
+  const container = controller.pos.findInRange(FIND_STRUCTURES, 1, {
+    filter: s => s.structureType === STRUCTURE_CONTAINER
+  })[0];
+  if (!container) return false;
+  return (container as StructureContainer).store.getFreeCapacity(RESOURCE_ENERGY) === 0;
+}
+
+/** Dispatch to the correct gate function */
+function spawnGate(role: string, room: Room): boolean {
+  switch (role) {
+    case 'survivor': return survivorGateRcl3(room);
+    case 'builder':  return builderGate(room);
+    case 'upgrader': return upgraderGate(room);
+    case 'hauler': {
+      const containers = room.find(FIND_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_CONTAINER
+      });
+      return containers.length > 0;
+    }
+    default: return true;
+  }
+}
+
+/** Run spawn logic for one room. Call once per tick. */
 export function runSpawnManager(room: Room): void {
   const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
   if (spawns.length === 0) return;
@@ -134,19 +163,31 @@ export function runSpawnManager(room: Room): void {
   for (const quota of quotas) {
     const current = creepCounts[quota.role] || 0;
 
-    // Below minimum? Always try to spawn. At minimum but below max? Only if spawn gate passes.
+    // Skip if at max
     if (current >= quota.maximum) continue;
-    if (current >= quota.minimum && !spawnGate(quota.role, room)) continue;
+
+    // At RCL 1-2, survivors skip gate check (always allowed)
+    // At RCL 3+, gate applies when at or above minimum
+    if (rcl >= 3 && current >= quota.minimum) {
+      if (!spawnGate(quota.role, room)) continue;
+    }
 
     // Get body for this role
     const body = getBody(quota.role, rcl, room.energyAvailable);
     if (!body || body.length === 0) continue;
 
-    // Spawn
     const name = quota.role + '_' + Game.time;
     for (const spawn of spawns) {
       const result = spawn.spawnCreep(body, name, {
-        memory: { role: quota.role, harvesting: true, building: false, upgrading: false, positioned: false }
+        memory: {
+          role: quota.role,
+          harvesting: true,
+          building: false,
+          upgrading: false,
+          positioned: false,
+          task: 2, // Task.HARVEST for survivors
+          taskLockedUntil: 0,
+        }
       });
       if (result === OK) {
         const cost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);
