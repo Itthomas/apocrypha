@@ -1,36 +1,42 @@
 /**
- * roles/builder.ts — Construction and repair creep logic
+ * roles/builder.ts — Construction creep
  *
- * Builds construction sites and repairs damaged structures.
- * Withdraws energy from spawns/extensions, then seeks build/repair targets.
- *
- * ENERGY FLOOR: if room energy is below 300, the builder refuses to build
- * and instead upgrades the controller (or harvests if empty). This prevents
- * builders from starving the spawn queue by consuming energy for construction
- * while the colony can't afford to spawn new creeps.
+ * Pulls energy from the spawn overflow container only.
+ * Spawns only when container ≥50% full and construction sites exist.
+ * Max 2 builders alive at a time.
+ * Build priority: extensions > containers > tower > roads > ramparts > walls.
  */
-
-import { trackHarvest, trackBuild, trackRepair, trackUpgrade } from '../telemetry';
-
-/** Minimum room energy before builders are allowed to build */
-const BUILD_ENERGY_FLOOR = 300;
 
 interface BuilderMemory {
   role: 'builder';
   building: boolean;
   targetId?: Id<ConstructionSite | Structure>;
-  /** Ticks since last position change (stuck detection) */
-  stuckTicks?: number;
-  lastPos?: { x: number; y: number };
+}
+
+/** Build priority order by structure type (lower = build first) */
+const BUILD_PRIORITY: Record<string, number> = {
+  [STRUCTURE_EXTENSION]: 1,
+  [STRUCTURE_CONTAINER]: 2,
+  [STRUCTURE_TOWER]:    3,
+  [STRUCTURE_STORAGE]:  4,
+  [STRUCTURE_ROAD]:     5,
+  [STRUCTURE_RAMPART]:  6,
+  [STRUCTURE_WALL]:     7,
+};
+
+/** Get the spawn overflow container */
+function getOverflowContainer(room: Room): StructureContainer | null {
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length === 0) return null;
+  return spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+    filter: s => s.structureType === STRUCTURE_CONTAINER
+  })[0] as StructureContainer | null;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as BuilderMemory;
 
-  // State transition
-  if (creep.store.getFreeCapacity() === 0) {
-    mem.building = true;
-  }
+  if (creep.store.getFreeCapacity() === 0) mem.building = true;
   if (creep.store.getUsedCapacity() === 0) {
     mem.building = false;
     mem.targetId = undefined;
@@ -38,19 +44,6 @@ export function run(creep: Creep): boolean {
 
   // BUILD
   if (mem.building) {
-    // ENERGY FLOOR: refuse to build when room energy is below threshold.
-    // Building costs energy per WORK part per tick. At low energy levels
-    // this starves the spawn queue. Instead, upgrade the controller.
-    if (creep.room.energyAvailable < BUILD_ENERGY_FLOOR) {
-      if (creep.room.controller) {
-        if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-          creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
-        }
-      }
-      return true;
-    }
-
-    // Priority: construction sites (by progress), then repairs (lowest hp first)
     let target: ConstructionSite | Structure | null = null;
 
     if (mem.targetId) {
@@ -58,25 +51,26 @@ export function run(creep: Creep): boolean {
     }
 
     if (!target) {
-      // Find nearest construction site
-      target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
-      if (!target) {
-        // Find structures below 50% hp
-        target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-          filter: s => s.hits < s.hitsMax * 0.5
-        });
-      }
+      const allSites = creep.room.find(FIND_CONSTRUCTION_SITES);
+      // Sort by build priority
+      allSites.sort((a, b) =>
+        (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99)
+      );
+      target = allSites.length > 0 ? allSites[0] : null;
     }
 
     if (!target) {
-      // Nothing to build/repair — fall back to upgrading
-      if (creep.room.controller) {
-        if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-          creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
-        }
-      }
-      return true;
+      // No construction sites — repair damaged structures (priority order)
+      const damaged = creep.room.find(FIND_STRUCTURES, {
+        filter: s => s.hits < s.hitsMax * 0.5 && s.structureType !== STRUCTURE_WALL
+      });
+      damaged.sort((a, b) =>
+        (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99)
+      );
+      target = damaged.length > 0 ? damaged[0] : null;
     }
+
+    if (!target) return false; // Nothing to do
 
     mem.targetId = target.id;
 
@@ -88,55 +82,21 @@ export function run(creep: Creep): boolean {
     }
 
     if (result === ERR_NOT_IN_RANGE) {
-      creep.moveTo(target, { visualizePathStyle: { stroke: '#00ff00' } });
+      creep.moveTo(target);
     } else if (result === OK) {
-      const workParts = creep.getActiveBodyparts(WORK);
-      if (target instanceof ConstructionSite) {
-        trackBuild(creep, workParts * 5);
-      } else {
-        trackRepair(creep, workParts);
-      }
-      // Clear target if finished
       if ((target instanceof ConstructionSite && !Game.getObjectById(target.id)) ||
           (target instanceof Structure && target.hits >= target.hitsMax)) {
         mem.targetId = undefined;
       }
     }
-
     return true;
   }
 
-  // WITHDRAW energy — but only from spawn/extensions that have meaningful amounts.
-  // Skip nearly-empty structures to avoid draining energy that should accumulate for spawning.
-  const spawnOrExt = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-    filter: s =>
-      (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-      s.store.getUsedCapacity(RESOURCE_ENERGY) >= 50
-  });
-
-  if (spawnOrExt) {
-    if (creep.withdraw(spawnOrExt, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-      creep.moveTo(spawnOrExt);
-    }
-    return true;
-  }
-
-  // No meaningful stored energy — upgrade controller until energy builds up
-  if (creep.room.controller) {
-    if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-      creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
-    }
-    return true;
-  }
-
-  // No controller somehow — harvest to at least do something
-  const source = creep.pos.findClosestByPath(FIND_SOURCES);
-  if (source) {
-    const result = creep.harvest(source);
-    if (result === ERR_NOT_IN_RANGE) {
-      creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
-    } else if (result === OK) {
-      trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
+  // WITHDRAW from spawn overflow container only
+  const container = getOverflowContainer(creep.room);
+  if (container && container.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(container);
     }
     return true;
   }

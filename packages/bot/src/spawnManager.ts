@@ -1,95 +1,116 @@
 /**
  * spawnManager.ts — Apocrypha Spawn Manager
  *
- * Decides what to spawn based on room state, energy, and current creep counts.
- * Implements a phase-based bootstrap: harvesters → builders → upgraders → haulers.
+ * Uses bodyDesigner for per-role body comps based on RCL and energy.
+ * Manages spawn queues with quota limits and spawn gates.
+ *
+ * Spawn gates:
+ * - builder: only if overflow container ≥50% full AND construction sites exist, max 2
+ * - upgrader: only if controller container is full, max 1
+ * - survivor: only if 0 miners, max 2
+ * - miner: max 2 (one per source)
+ * - hauler: max 3 at RCL 3+, only if source containers exist
  */
 
+import { getBody } from './bodyDesigner';
 import { trackSpawnSpend } from './telemetry';
 
-/** Role priority order for spawning. Lower index = spawn first. */
-type CreepRole = 'harvester' | 'builder' | 'upgrader' | 'hauler';
-
-/** Desired creep composition per RCL phase */
 interface SpawnQuota {
-  role: CreepRole;
-  /** Body parts as array of body part constants */
-  body: BodyPartConstant[];
-  /** Minimum number of this role to maintain */
+  role: string;
   minimum: number;
-  /** Maximum (hard cap) */
   maximum: number;
 }
 
 /**
- * Get spawn quota for a room based on its RCL and energy capacity.
- * Returns role list sorted by spawn priority.
+ * Get spawn quotas for a room based on RCL.
  */
-export function getSpawnQuotas(room: Room): SpawnQuota[] {
-  const rcl = room.controller?.level ?? 0;
-  const energyCap = room.energyCapacityAvailable;
-  const energyAvail = room.energyAvailable;
-
-  // Simple body builder: fill WORK/CARRY/MOVE in equal parts up to energy budget
-  const BODY_BASE_COST = BODYPART_COST[WORK] + BODYPART_COST[CARRY] + BODYPART_COST[MOVE]; // 200
-  const buildBody = (work: number): BodyPartConstant[] => {
-    const parts: BodyPartConstant[] = [];
-    for (let i = 0; i < work; i++) parts.push(WORK);
-    for (let i = 0; i < work; i++) parts.push(CARRY);
-    for (let i = 0; i < work; i++) parts.push(MOVE);
-    return parts;
-  };
-
-  // Tier = how many WORK/CARRY/MOVE triples we can afford
-  const tiers = Math.min(Math.floor(energyAvail / BODY_BASE_COST), Math.floor(energyCap / BODY_BASE_COST));
-  // Guarantee at least 1 tier if we have the minimum energy
-  const safeTiers = Math.max(1, tiers);
-
-  const quotas: SpawnQuota[] = [];
+function getQuotas(rcl: number): SpawnQuota[] {
+  const quotas: SpawnQuota[] = [
+    { role: 'miner',    minimum: 0, maximum: 2 },
+    { role: 'survivor', minimum: 0, maximum: 2 },
+    { role: 'hauler',   minimum: 0, maximum: 0 },
+    { role: 'builder',  minimum: 0, maximum: 2 },
+    { role: 'upgrader', minimum: 0, maximum: 1 },
+  ];
 
   switch (rcl) {
     case 0:
     case 1:
-      // Just harvesters — they self-haul to spawn
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 2)), minimum: 2, maximum: 4 });
+      quotas[0] = { role: 'miner',    minimum: 2, maximum: 4 }; // walking miners at RCL 1
+      quotas[1] = { role: 'survivor', minimum: 0, maximum: 2 };
       break;
-
     case 2:
-      // Harvesters + builders + one upgrader
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 3)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 2)), minimum: 1, maximum: 2 });
+      quotas[0] = { role: 'miner',    minimum: 2, maximum: 3 };
+      quotas[2] = { role: 'hauler',   minimum: 1, maximum: 2 };
+      quotas[3] = { role: 'builder',  minimum: 1, maximum: 2 };
       break;
-
     case 3:
-      // Extensions online — bigger bodies, add haulers
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 3 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 3)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 3 });
+      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
+      quotas[2] = { role: 'hauler',   minimum: 2, maximum: 3 };
+      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
+      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 1 };
       break;
-
     case 4:
     case 5:
-      // Storage + towers online
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 4)), minimum: 2, maximum: 4 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 5)), minimum: 1, maximum: 3 });
+      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
+      quotas[2] = { role: 'hauler',   minimum: 2, maximum: 4 };
+      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
+      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 1 };
       break;
-
-    case 6:
-    case 7:
-    case 8:
-      // Late game — big bodies
-      quotas.push({ role: 'harvester', body: buildBody(Math.min(safeTiers, 6)), minimum: 2, maximum: 5 });
-      quotas.push({ role: 'hauler', body: buildBody(Math.min(safeTiers, 5)), minimum: 2, maximum: 5 });
-      quotas.push({ role: 'builder', body: buildBody(Math.min(safeTiers, 4)), minimum: 1, maximum: 2 });
-      quotas.push({ role: 'upgrader', body: buildBody(Math.min(safeTiers, 6)), minimum: 1, maximum: 4 });
-      break;
+    default:
+      quotas[0] = { role: 'miner',    minimum: 2, maximum: 2 };
+      quotas[2] = { role: 'hauler',   minimum: 3, maximum: 5 };
+      quotas[3] = { role: 'builder',  minimum: 0, maximum: 2 };
+      quotas[4] = { role: 'upgrader', minimum: 0, maximum: 2 };
   }
 
   return quotas;
+}
+
+/** Check spawn gate conditions for a role */
+function spawnGate(role: string, room: Room): boolean {
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length === 0) return false;
+
+  // Survivor gate: only if 0 miners exist
+  if (role === 'survivor') {
+    const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+    return miners.length === 0;
+  }
+
+  // Builder gate: overflow container ≥50% full AND construction sites exist
+  if (role === 'builder') {
+    const sites = room.find(FIND_CONSTRUCTION_SITES);
+    if (sites.length === 0) return false;
+    const container = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    })[0];
+    if (!container) return false;
+    const store = (container as StructureContainer).store;
+    return store.getUsedCapacity(RESOURCE_ENERGY) >= store.getCapacity(RESOURCE_ENERGY) * 0.5;
+  }
+
+  // Upgrader gate: controller container is full
+  if (role === 'upgrader') {
+    const controller = room.controller;
+    if (!controller) return false;
+    const container = controller.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    })[0];
+    if (!container) return false;
+    const store = (container as StructureContainer).store;
+    return store.getFreeCapacity(RESOURCE_ENERGY) === 0;
+  }
+
+  // Hauler gate: source containers exist
+  if (role === 'hauler') {
+    const containers = room.find(FIND_STRUCTURES, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+    return containers.length > 0;
+  }
+
+  return true;
 }
 
 /**
@@ -99,40 +120,39 @@ export function runSpawnManager(room: Room): void {
   const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
   if (spawns.length === 0) return;
 
-  const quotas = getSpawnQuotas(room);
+  const rcl = room.controller?.level ?? 0;
+  const quotas = getQuotas(rcl);
 
   // Count current creeps by role
   const creepCounts: Record<string, number> = {};
-  const creeps = room.find(FIND_MY_CREEPS);
-  for (const c of creeps) {
+  for (const c of room.find(FIND_MY_CREEPS)) {
     const role = c.memory.role ?? 'unknown';
     creepCounts[role] = (creepCounts[role] || 0) + 1;
   }
 
-  // Try to spawn in priority order
+  // Try each role in priority order
   for (const quota of quotas) {
     const current = creepCounts[quota.role] || 0;
 
-    // Already at minimum? Skip if we're at the hard cap
+    // Below minimum? Always try to spawn. At minimum but below max? Only if spawn gate passes.
     if (current >= quota.maximum) continue;
+    if (current >= quota.minimum && !spawnGate(quota.role, room)) continue;
 
-    // Can we afford it?
-    const cost = quota.body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
-    if (room.energyAvailable < cost) continue;
+    // Get body for this role
+    const body = getBody(quota.role, rcl, room.energyAvailable);
+    if (!body || body.length === 0) continue;
 
-    // Generate a name
-    const name = `${quota.role}_${Game.time}`;
-
-    // Try each spawn
+    // Spawn
+    const name = quota.role + '_' + Game.time;
     for (const spawn of spawns) {
-      const result = spawn.spawnCreep(quota.body, name, {
-        memory: { role: quota.role, harvesting: true, building: false, upgrading: false }
+      const result = spawn.spawnCreep(body, name, {
+        memory: { role: quota.role, harvesting: true, building: false, upgrading: false, positioned: false }
       });
-
       if (result === OK) {
+        const cost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);
         trackSpawnSpend(room.name, cost);
-        console.log(`[spawn] ${name} (${quota.role}) — ${cost}e`);
-        return; // One spawn per tick
+        console.log('[spawn] ' + name + ' (' + quota.role + ') body=' + body.join(',') + ' cost=' + cost + 'e');
+        return;
       }
     }
   }

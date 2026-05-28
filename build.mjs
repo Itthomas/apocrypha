@@ -23,11 +23,13 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 // left as require() calls by marking all OTHER module paths as external.
 const modules = {
   'main':                 'main.ts',
-  'role.harvester':       'roles/harvester.ts',
+  'role.miner':           'roles/miner.ts',
   'role.hauler':          'roles/hauler.ts',
   'role.builder':         'roles/builder.ts',
   'role.upgrader':        'roles/upgrader.ts',
+  'role.survivor':        'roles/survivor.ts',
   'spawnManager':         'spawnManager.ts',
+  'bodyDesigner':         'bodyDesigner.ts',
   'constructionPlanner':  'constructionPlanner.ts',
   'telemetry':            'telemetry/index.ts',
   'mantra':               'mantra.ts',

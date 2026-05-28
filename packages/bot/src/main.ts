@@ -9,10 +9,11 @@
 var spawnManager = require('spawnManager');
 var telemetry = require('telemetry');
 var constructionPlanner = require('constructionPlanner');
-var roleHarvester = require('role.harvester');
+var roleMiner = require('role.miner');
 var roleHauler = require('role.hauler');
 var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
+var roleSurvivor = require('role.survivor');
 var mantra = require('mantra');
 
 // Map role names to module run functions
@@ -21,20 +22,21 @@ var roleModules: Record<string, any> | null = null;
 function getRoleModule(role: string) {
   if (!roleModules) {
     roleModules = {
-      'harvester': roleHarvester,
+      'miner': roleMiner,
       'hauler': roleHauler,
       'builder': roleBuilder,
       'upgrader': roleUpgrader,
+      'survivor': roleSurvivor,
     };
   }
   return roleModules[role] || null;
 }
 
 /** Count creeps by role in a room */
-function countHarvesters(room: Room): number {
+function countMiners(room: Room): number {
   var count = 0;
   room.find(FIND_MY_CREEPS).forEach(function(c) {
-    if (c.memory.role === 'harvester') count++;
+    if (c.memory.role === 'miner') count++;
   });
   return count;
 }
@@ -76,9 +78,9 @@ export function loop(): void {
     var role = creep.memory.role as string | undefined;
     var mod = role ? getRoleModule(role) : null;
 
-    // Emergency: if no harvesters, ANY creep should harvest to keep colony alive
-    if (role !== 'harvester' && countHarvesters(creep.room) === 0) {
-      roleHarvester.run(creep);
+    // Emergency: if no miners, ANY creep should harvest to keep colony alive
+    if (role !== 'miner' && countMiners(creep.room) === 0) {
+      roleSurvivor.run(creep);
       continue;
     }
 
@@ -89,8 +91,8 @@ export function loop(): void {
     }
     
     // If role couldn't find work, harvest as fallback
-    if (!acted && role !== 'harvester') {
-      roleHarvester.run(creep);
+    if (!acted && role !== 'miner') {
+      roleSurvivor.run(creep);
     }
   }
 
