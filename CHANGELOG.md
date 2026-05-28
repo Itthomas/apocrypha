@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Monitor: RCL-aware role checks (survivors at low RCL)
+**Category:** monitor
+**What changed:** Fixed `scripts/monitor.mjs` — role balance checks were hardcoded to look for `harvester/miner/builder/upgrader` roles, but at RCL 1-2 only `survivor` creeps exist (generalists that do everything). Now uses RCL-dependent lookups: survivors count as harvesters, builders, and upgraders when RCL ≤ 2.
+**Why:** False 🚨 alert "no miners" at RCL 1 with 4 survivors. Colony was perfectly healthy — the monitor just didn't understand the RCL-based role progression.
+**Result:** Monitor exits clean (0) — no issues, only info note about full energy.
+
 ### [2026-05-28] Handle depleted sources in harvester
 **Category:** bot
 **What changed:** Harvesters now reassign to another source when `creep.harvest()` returns `ERR_NOT_ENOUGH_RESOURCES` (depleted source), instead of silently idling until the source regenerates.

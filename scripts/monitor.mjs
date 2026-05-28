@@ -87,12 +87,20 @@ function analyze(stats, prev) {
 
     // Role balance
     const byRole = c.byRole || {};
-    const miners = byRole.harvester || 0;
-    const builders = byRole.builder || 0;
-    const upgraders = byRole.upgrader || 0;
+    // At RCL 1-2, survivors do everything (harvest, build, upgrade).
+    // At RCL 3+, specialized roles (miner, hauler, builder, upgrader) appear.
+    const harvesters = room.rcl <= 2
+      ? (byRole.survivor || 0)
+      : (byRole.miner || byRole.harvester || 0);
+    const builders = room.rcl <= 2
+      ? (byRole.survivor || 0)
+      : (byRole.builder || 0);
+    const upgraders = room.rcl <= 2
+      ? (byRole.survivor || 0)
+      : (byRole.upgrader || 0);
 
-    if (miners === 0 && c.total > 0) {
-      issues.push(`🚨 ${name}: no miners — energy income will stop`);
+    if (harvesters === 0 && c.total > 0) {
+      issues.push(`🚨 ${name}: no harvesters — energy income will stop`);
     }
     if (room.constructionSites > 0 && builders === 0) {
       notes.push(`💡 ${name}: ${room.constructionSites} construction sites, no builders`);
