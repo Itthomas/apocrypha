@@ -39,7 +39,7 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
     { minRcl: 7, primary: { work: 0, carry: 24, move: 6 }, fallback: { work: 0, carry: 16, move: 4 } },
   ],
   survivor: [
-    { minRcl: 1, primary: { work: 2, carry: 1, move: 1 }, fallback: { work: 1, carry: 1, move: 1 } },
+    { minRcl: 1, primary: { work: 1, carry: 3, move: 1 } },
   ],
   builder: [
     { minRcl: 1, primary: { work: 1, carry: 1, move: 1 }, fallback: { work: 1, carry: 1, move: 1 } },
