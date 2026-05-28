@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Fix trackCreepHarvest not exported from telemetry module
+**Category:** creep
+**What changed:** Re-exported `trackCreepHarvest` from `telemetry/index.ts`. It was defined in `types.ts` but never made available to external consumers like `role.harvester`.
+**Why:** At runtime, `trackCreepHarvest` was `undefined` when imported by harvester, causing a TypeError on every successful `creep.harvest()` call. This also prevented the preceding `trackHarvest()` room-level stat call's effect from landing properly, resulting in "zero energy harvested in stats window" monitor alerts.
+**Result:** Built + deployed. Monitor shows colony healthy — no more zero-harvest alerts.
+
 ### [2026-05-27] Filter unreachable sources in harvester assignment
 **Category:** creep
 **What changed:** Added `isSourceReachable()` check in `role.harvester` — skips sources with all four adjacent tiles being walls (TERRAIN_MASK_WALL). Also added `ERR_NO_PATH` detection from `moveTo` to trigger reassignment when pathfinding fails.

@@ -140,7 +140,8 @@ export function collectStats(): void {
 // On death, counters are flushed to Memory.creepLog by main.ts.
 
 import type { DeathLogEntry } from './types';
-import { LOG_CLEANUP_INTERVAL, LOG_MAX_AGE } from './types';
+import { LOG_CLEANUP_INTERVAL, LOG_MAX_AGE, trackCreepHarvest } from './types';
+export { trackCreepHarvest };
 
 /** Record energy delivered to spawn/extensions/towers */
 export function trackDelivery(creep: Creep, amount: number): void {
