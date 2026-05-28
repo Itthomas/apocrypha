@@ -30,73 +30,12 @@ enum Task {
 interface SurvivorMemory {
   role: 'survivor';
   task: Task;
-  /** Locked source ID — don't switch mid-trip */
-  sourceId?: Id<Source>;
   /** Last task switch tick — prevents rapid switching */
   taskLockedUntil: number;
 }
 
 /** How long to lock a task after switching (prevents thrashing) */
 const TASK_LOCK_TICKS = 20;
-
-// ── Source reservation (shared across all survivors in the room) ──
-
-interface ReservationEntry {
-  creepName: string;
-  sourceId: string;
-  reservedAt: number;
-}
-
-/** Get reserved sources map for the room */
-function getReservations(roomName: string): Record<string, string> {
-  if (!Memory.sourceReservations) Memory.sourceReservations = {};
-  if (!Memory.sourceReservations[roomName]) Memory.sourceReservations[roomName] = {};
-  return Memory.sourceReservations[roomName];
-}
-
-/** Clean stale reservations (creep dead or reservation expired) */
-function cleanReservations(roomName: string): void {
-  const res = Memory.sourceReservations?.[roomName];
-  if (!res) return;
-  for (const sourceId in res) {
-    const name = res[sourceId];
-    if (!(name in Game.creeps)) {
-      delete res[sourceId];
-    }
-  }
-}
-
-/** Attempt to reserve a source for this creep */
-function reserveSource(creep: Creep, source: Source): boolean {
-  const roomName = creep.room.name;
-  const res = getReservations(roomName);
-  cleanReservations(roomName);
-
-  // Check if this source is already reserved by someone else
-  if (res[source.id] && res[source.id] !== creep.name) return false;
-
-  // Check access slots — count how many creeps are already at/near this source
-  const nearby = source.pos.findInRange(FIND_MY_CREEPS, 1, {
-    filter: (c: Creep) => c.name !== creep.name && c.memory.role === 'survivor'
-  });
-  // Each source has up to 3 accessible tiles (depends on terrain). Be conservative: max 2.
-  if (nearby.length >= 2) return false;
-
-  // Reserve
-  res[source.id] = creep.name;
-  return true;
-}
-
-/** Release our reservation */
-function releaseSource(creep: Creep): void {
-  const mem = creep.memory as SurvivorMemory;
-  if (!mem.sourceId) return;
-  const res = Memory.sourceReservations?.[creep.room.name];
-  if (res && res[mem.sourceId] === creep.name) {
-    delete res[mem.sourceId];
-  }
-  mem.sourceId = undefined;
-}
 
 // ── Main run ──
 
@@ -112,7 +51,6 @@ export function run(creep: Creep): boolean {
   // State transitions
   if (creep.store.getFreeCapacity() === 0 && mem.task !== Task.DELIVER) {
     setTask(creep, Task.DELIVER, mem);
-    releaseSource(creep);
   }
   if (creep.store.getUsedCapacity() === 0 && mem.task === Task.DELIVER) {
     setTask(creep, Task.HARVEST, mem);
@@ -215,8 +153,6 @@ function doHarvest(creep: Creep, mem: SurvivorMemory): boolean {
     }
   }
 
-  const roomName = creep.room.name;
-
   // Check if we should switch to building (if sites exist and we have energy)
   const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
   if (sites.length > 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 25 && canSwitchTask(mem)) {
@@ -224,43 +160,12 @@ function doHarvest(creep: Creep, mem: SurvivorMemory): boolean {
     return doBuild(creep, mem);
   }
 
-  // Validate current source
-  if (mem.sourceId) {
-    const current = Game.getObjectById(mem.sourceId);
-    if (!current || current.energy === 0) {
-      releaseSource(creep);
-    }
-  }
-
-  // Find a source (try reserved one first, then find new)
-  let source: Source | null = null;
-  if (mem.sourceId) {
-    source = Game.getObjectById(mem.sourceId);
-  }
+  // Always pick the nearest active source. No reservation for one-off refills.
+  const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
+    filter: s => s.energy > 0
+  });
 
   if (!source) {
-    // Get valid sources, sorted by distance
-    const allSources = creep.room.find(FIND_SOURCES_ACTIVE).filter((s: Source) => s.energy > 0);
-    allSources.sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));
-
-    // Try to reserve one (closest available first)
-    for (const s of allSources) {
-      if (reserveSource(creep, s)) {
-        source = s;
-        mem.sourceId = s.id;
-        break;
-      }
-    }
-
-    // If all sources are reserved/blocked, try the closest anyway
-    if (!source && allSources.length > 0) {
-      source = allSources[0];
-      // Don't set sourceId — we're sharing, not reserved
-    }
-  }
-
-  if (!source) {
-    // No energy sources available — upgrade controller as last resort
     if (canSwitchTask(mem)) setTask(creep, Task.UPGRADE, mem);
     return false;
   }
@@ -270,9 +175,6 @@ function doHarvest(creep: Creep, mem: SurvivorMemory): boolean {
     creep.moveTo(source);
   } else if (result === OK) {
     trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
-  } else if (result === ERR_NOT_ENOUGH_ENERGY || result === ERR_BUSY) {
-    // Source depleted/busy — release and find another
-    releaseSource(creep);
   }
 
   return true;
