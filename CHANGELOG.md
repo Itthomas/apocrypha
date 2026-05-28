@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Miner: affordable RCL 3 fallback body
+**Category:** bot
+**What changed:** Lowered miner RCL 3 fallback from `work:5` → `work:4` (cost 600e → 500e).
+**Why:** At RCL 3, spawn+extensions only provide 550e total. Neither the primary (700e) nor the old fallback (600e) were affordable. The spawn manager would skip miners entirely, leaving the colony with zero energy income. The new fallback (4W/1C/1M = 500e) fits in RCL 3's budget.
+**Result:** Miner spawned immediately on deploy. Colony recovered from 3→4 creeps, energy economy resumed.
+
 ### [2026-05-28] Survivor: bypass task lock when nothing to deliver
 **Category:** bot
 **What changed:** Survivors in DELIVER task now unconditionally switch to the next task when spawn + extensions are both full, instead of waiting for `taskLockedUntil` to expire. Removed `canSwitchTask(mem)` guard in `doDeliver` step 1c.
