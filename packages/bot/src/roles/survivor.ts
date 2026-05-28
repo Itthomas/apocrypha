@@ -1,40 +1,46 @@
 /**
  * roles/survivor.ts — Apocrypha Survivor (Generalist)
  *
- * Simple state machine, no task locks:
- *   Carry empty → harvest from nearest available source
- *   Carry full  → deliver to spawn/extensions
- *   If nowhere to deliver → build nearest construction site
- *   If nothing to build → upgrade controller
+ * Task-based state machine:
+ *   Each creep has a current TASK. It sticks to that task until:
+ *   - Carry is empty (→ switch to HARVEST)
+ *   - Carry is full and task is HARVEST (→ switch to next priority task)
+ *   - Task target no longer exists (→ switch to next priority task)
  *
- * Source slot claiming prevents thrashing.
+ * Priority order for switching: DELIVER → BUILD → UPGRADE (→ HARVEST if nothing else)
+ * HARVEST is the fallback — always available if sources have energy.
+ *
+ * Source slot claiming prevents thrashing (only checked during HARVEST).
  */
 
 import { trackHarvest } from '../telemetry';
 
+enum TASK {
+  HARVEST = 0,
+  DELIVER = 1,
+  BUILD = 2,
+  UPGRADE = 3,
+}
+
 interface SurvivorMemory {
   role: 'survivor';
+  task: TASK;
 }
 
 // ── Source slot claiming ──
 
-interface SourceClaims {
-  [sourceId: string]: Record<string, string>; // "x,y" → creepName
-}
-
-function getClaims(): SourceClaims {
+function getClaims(): Record<string, Record<string, string>> {
   if (!Memory.sourceClaims) Memory.sourceClaims = {};
-  return Memory.sourceClaims as SourceClaims;
+  return Memory.sourceClaims as Record<string, Record<string, string>>;
 }
 
 function cleanClaims(): void {
   const claims = getClaims();
-  for (const sourceId in claims) {
-    for (const slot in claims[sourceId]) {
-      const name = claims[sourceId][slot];
-      if (!(name in Game.creeps)) delete claims[sourceId][slot];
+  for (const sid in claims) {
+    for (const slot in claims[sid]) {
+      if (!(claims[sid][slot] in Game.creeps)) delete claims[sid][slot];
     }
-    if (Object.keys(claims[sourceId]).length === 0) delete claims[sourceId];
+    if (Object.keys(claims[sid]).length === 0) delete claims[sid];
   }
 }
 
@@ -42,16 +48,11 @@ function claimSlot(creep: Creep, source: Source): {x: number, y: number} | null 
   cleanClaims();
   const claims = getClaims();
   const srcClaims = claims[source.id] || {};
-
-  // Remove our own old claim at this source
   for (const slot in srcClaims) {
     if (srcClaims[slot] === creep.name) delete srcClaims[slot];
   }
-
   const room = Game.rooms[source.pos.roomName];
   if (!room) return null;
-
-  // Find an unclaimed adjacent non-wall tile
   for (let dx = -1; dx <= 1; dx++) {
     for (let dy = -1; dy <= 1; dy++) {
       if (dx === 0 && dy === 0) continue;
@@ -69,38 +70,131 @@ function claimSlot(creep: Creep, source: Source): {x: number, y: number} | null 
 
 function releaseClaim(creep: Creep): void {
   const claims = getClaims();
-  for (const sourceId in claims) {
-    for (const slot in claims[sourceId]) {
-      if (claims[sourceId][slot] === creep.name) delete claims[sourceId][slot];
+  for (const sid in claims) {
+    for (const slot in claims[sid]) {
+      if (claims[sid][slot] === creep.name) delete claims[sid][slot];
     }
-    if (Object.keys(claims[sourceId]).length === 0) delete claims[sourceId];
+    if (Object.keys(claims[sid]).length === 0) delete claims[sid];
   }
 }
 
-// ── Main loop ──
+// ── Task switching ──
 
-export function run(creep: Creep): boolean {
-  // STATE: has energy → try to use it (deliver, build, upgrade in priority order)
-  // Only harvest when carry is completely empty.
-  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-    return doDeliverOrUse(creep);
+/** Returns the next task to switch to, based on priority and availability */
+function chooseTask(creep: Creep): TASK {
+  // DELIVER: spawn or extensions need energy AND we have energy to give
+  const needsEnergy = creep.room.find(FIND_MY_STRUCTURES, {
+    filter: s =>
+      (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+      s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  });
+  if (needsEnergy.length > 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    return TASK.DELIVER;
   }
 
-  releaseClaim(creep);
-  return doHarvest(creep);
+  // BUILD: construction sites exist AND we have energy or there are sites nearby
+  if (creep.room.find(FIND_CONSTRUCTION_SITES).length > 0 && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    return TASK.BUILD;
+  }
+
+  // UPGRADE: we have energy and nothing else needs it
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    return TASK.UPGRADE;
+  }
+
+  // Fallback: harvest
+  return TASK.HARVEST;
+}
+
+function setTask(creep: Creep, task: TASK): void {
+  const mem = creep.memory as SurvivorMemory;
+  if (mem.task !== TASK.HARVEST) releaseClaim(creep);
+  mem.task = task;
+}
+
+// ── Main run ──
+
+export function run(creep: Creep): boolean {
+  const mem = creep.memory as SurvivorMemory;
+  if (mem.task === undefined) mem.task = TASK.HARVEST;
+
+  // HARVEST: keep harvesting until carry is FULL
+  if (mem.task === TASK.HARVEST) {
+    // If carry is full, switch to next priority task
+    if (creep.store.getFreeCapacity() === 0) {
+      const next = chooseTask(creep);
+      if (next !== TASK.HARVEST) {
+        releaseClaim(creep);
+        setTask(creep, next);
+        return run(creep); // recurse to execute the new task this tick
+      }
+    }
+    // Carry is empty, or no other tasks available — keep harvesting
+    // If we have some energy and spawn is critically empty, deliver now
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
+      const spawns = creep.room.find(FIND_MY_SPAWNS);
+      if (spawns.some(s => s.store.getUsedCapacity(RESOURCE_ENERGY) < 100)) {
+        setTask(creep, TASK.DELIVER);
+        return run(creep);
+      }
+    }
+    return doHarvest(creep);
+  }
+
+  // DELIVER: keep delivering until carry is empty or no targets
+  if (mem.task === TASK.DELIVER) {
+    // Carry empty → switch to harvest
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      setTask(creep, TASK.HARVEST);
+      return run(creep);
+    }
+    return doDeliver(creep);
+  }
+
+  // BUILD: keep building until carry empty or no sites
+  if (mem.task === TASK.BUILD) {
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      setTask(creep, TASK.HARVEST);
+      return run(creep);
+    }
+    const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+    if (!site) {
+      // No sites left → find something else to do
+      const next = chooseTask(creep);
+      if (next !== TASK.BUILD) { setTask(creep, next); return run(creep); }
+      return false;
+    }
+    const result = creep.build(site);
+    if (result === ERR_NOT_IN_RANGE) creep.moveTo(site);
+    return true;
+  }
+
+  // UPGRADE: keep upgrading until carry empty
+  if (mem.task === TASK.UPGRADE) {
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      setTask(creep, TASK.HARVEST);
+      return run(creep);
+    }
+    if (creep.room.controller) {
+      if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(creep.room.controller);
+      }
+    }
+    return true;
+  }
+
+  return false;
 }
 
 // ── Harvest ──
 
 function doHarvest(creep: Creep): boolean {
-  // Pick source with available slots, nearest first
   const sources = creep.room.find(FIND_SOURCES_ACTIVE)
     .filter(s => s.energy > 0)
     .sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));
 
   for (const source of sources) {
-    const slot = claimSlot(creep, source);
-    if (slot) {
+    if (claimSlot(creep, source)) {
       const result = creep.harvest(source);
       if (result === ERR_NOT_IN_RANGE) creep.moveTo(source);
       else if (result === OK) trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
@@ -117,29 +211,19 @@ function doHarvest(creep: Creep): boolean {
   return true;
 }
 
-// ── Deliver or use energy ──
+// ── Deliver ──
 
-function doDeliverOrUse(creep: Creep): boolean {
-  const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-  const capacity = creep.store.getCapacity();
-
-  // 1. Fill spawn — but only if we have a meaningful payload
-  //    (at least 50% full, OR spawn is critically empty and we have >25e)
+function doDeliver(creep: Creep): boolean {
+  // Spawn first
   const spawn = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
     filter: s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
   });
   if (spawn) {
-    const spawnEnergy = spawn.store.getUsedCapacity(RESOURCE_ENERGY);
-    const spawnHungry = spawnEnergy < 100;
-    const worthDelivering = energy >= capacity * 0.5 || (spawnHungry && energy >= 25);
-    if (worthDelivering) {
-      if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(spawn);
-      return true;
-    }
-    // Not worth delivering yet — fall through to build/upgrade with this energy
+    if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(spawn);
+    return true;
   }
 
-  // 2. Fill extensions
+  // Extensions
   const ext = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
     filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
   });
@@ -148,22 +232,8 @@ function doDeliverOrUse(creep: Creep): boolean {
     return true;
   }
 
-  // 3. Build nearest construction site
-  const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
-  if (site) {
-    const result = creep.build(site);
-    if (result === ERR_NOT_IN_RANGE) creep.moveTo(site);
-    else if (result === ERR_NOT_ENOUGH_ENERGY) return doHarvest(creep); // ran out, go harvest
-    return true;
-  }
-
-  // 4. Upgrade controller (nothing else to do)
-  if (creep.room.controller) {
-    if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-      creep.moveTo(creep.room.controller);
-    }
-    return true;
-  }
-
+  // Nowhere to deliver → switch task
+  const next = chooseTask(creep);
+  if (next !== TASK.DELIVER) { setTask(creep, next); return run(creep); }
   return false;
 }
