@@ -1,6 +1,8 @@
 # Apocrypha — Improvement Backlog
 
-> Read by the cron agent on each iteration. Prioritized. Items move to CHANGELOG.md when completed.
+> Context for the agent, NOT a task list. Read to understand where the codebase is heading so informed decisions can be made. The primary driver of work is immediate issues the monitor observes — the backlog provides direction and prevents redundant or conflicting changes.
+>
+> When an item is completed (whether from the backlog or from addressing an observed issue), move it to CHANGELOG.md and mark it [x] here. Add new items as ideas emerge.
 
 ## Status Key
 - `[ ]` pending
