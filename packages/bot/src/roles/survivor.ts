@@ -120,13 +120,23 @@ function doHarvest(creep: Creep): boolean {
 // ── Deliver or use energy ──
 
 function doDeliverOrUse(creep: Creep): boolean {
-  // 1. Fill spawn (highest priority)
+  const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+  const capacity = creep.store.getCapacity();
+
+  // 1. Fill spawn — but only if we have a meaningful payload
+  //    (at least 50% full, OR spawn is critically empty and we have >25e)
   const spawn = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
     filter: s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
   });
   if (spawn) {
-    if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(spawn);
-    return true;
+    const spawnEnergy = spawn.store.getUsedCapacity(RESOURCE_ENERGY);
+    const spawnHungry = spawnEnergy < 100;
+    const worthDelivering = energy >= capacity * 0.5 || (spawnHungry && energy >= 25);
+    if (worthDelivering) {
+      if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(spawn);
+      return true;
+    }
+    // Not worth delivering yet — fall through to build/upgrade with this energy
   }
 
   // 2. Fill extensions
