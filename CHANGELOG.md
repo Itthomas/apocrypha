@@ -2,6 +2,12 @@
 
 > Written by the cron agent after each change. Read CHANGELOG.md on every iteration for context on what's been done.
 
+### [2026-05-28] Handle depleted sources in harvester
+**Category:** bot
+**What changed:** Harvesters now reassign to another source when `creep.harvest()` returns `ERR_NOT_ENOUGH_RESOURCES` (depleted source), instead of silently idling until the source regenerates.
+**Why:** Zero-harvest stats window detected (tick 45840). With 3 harvesters in W7N4, if assigned sources deplete near-simultaneously, harvesters would stand idle for an entire 20-tick stats window. The new `else if (result === ERR_NOT_ENOUGH_RESOURCES)` branch clears `sourceId` to trigger reassignment.
+**Result:** Colony healthy at tick 46040 — energy 44/300, 10 creeps, no issues.
+
 ### [2026-05-28] Stale deploy: rebuilt and redeployed from latest TypeScript source
 **Category:** deploy
 **What changed:** Rebuilt and redeployed all 9 modules from current TypeScript source. The deployed code in MongoDB was an older bundled build that lacked `isSourceReachable`, `safeTiers` spawn fallback, hauler drop/self-deliver logic, emergency harvester fallback, and had a hardcoded `150` body base cost instead of `200`.

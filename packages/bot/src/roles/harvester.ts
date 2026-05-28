@@ -152,6 +152,9 @@ export function run(creep: Creep): boolean {
     const amount = creep.getActiveBodyparts(WORK) * 2;
     trackHarvest(creep.room.name, amount);
     trackCreepHarvest(creep, amount);
+  } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
+    // Source depleted — reassign to another source if available
+    mem.sourceId = undefined;
   }
 
   return true;
