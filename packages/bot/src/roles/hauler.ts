@@ -78,10 +78,22 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // Nothing to haul — idle near spawn (harvesters haven't dropped anything yet)
-  const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
-  if (spawn) {
-    creep.moveTo(spawn);
+  // Nothing to haul — help build construction sites to speed recovery
+  const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+  if (site && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    if (creep.build(site) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(site, { visualizePathStyle: { stroke: '#00ff00' } });
+    }
+    return true;
+  }
+
+  // If empty and no dropped energy, harvest from a source to get energy for building
+  const source = creep.pos.findClosestByPath(FIND_SOURCES);
+  if (source) {
+    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+    }
+    return true;
   }
 
   return false;
