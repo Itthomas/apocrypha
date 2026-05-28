@@ -13,6 +13,7 @@ var roleHarvester = require('role.harvester');
 var roleHauler = require('role.hauler');
 var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
+var mantra = require('mantra');
 
 // Map role names to module run functions
 var roleModules: Record<string, any> | null = null;
@@ -94,4 +95,7 @@ export function loop(): void {
 
   // --- Telemetry ---
   telemetry.collectStats();
+
+  // --- Mantra ---
+  mantra.run();
 }

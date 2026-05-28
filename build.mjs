@@ -30,6 +30,7 @@ const modules = {
   'spawnManager':         'spawnManager.ts',
   'constructionPlanner':  'constructionPlanner.ts',
   'telemetry':            'telemetry/index.ts',
+  'mantra':               'mantra.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)
