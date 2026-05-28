@@ -39,16 +39,6 @@ interface SurvivorMemory {
 /** How long to lock a task after switching (prevents thrashing) */
 const TASK_LOCK_TICKS = 20;
 
-/** Build target priority — lower = build first */
-const BUILD_PRIORITY: Record<string, number> = {
-  [STRUCTURE_EXTENSION]: 1,
-  [STRUCTURE_CONTAINER]: 2,
-  [STRUCTURE_ROAD]:     3,
-  [STRUCTURE_TOWER]:    4,
-  [STRUCTURE_RAMPART]:  5,
-  [STRUCTURE_WALL]:     6,
-};
-
 // ── Source reservation (shared across all survivors in the room) ──
 
 interface ReservationEntry {
@@ -192,15 +182,12 @@ function doBuild(creep: Creep, mem: SurvivorMemory): boolean {
     }
   }
 
-  // Find nearest construction site (no target lock — builders can switch freely)
-  const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
-  if (sites.length === 0) {
+  // All current sites are equal priority (batch system). Build nearest one.
+  const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+  if (!target) {
     if (canSwitchTask(mem)) setTask(creep, Task.HARVEST, mem);
     return false;
   }
-
-  sites.sort((a, b) => (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99));
-  const target = sites[0];
 
   const result = creep.build(target);
   if (result === ERR_NOT_IN_RANGE) {
