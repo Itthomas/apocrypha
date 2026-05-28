@@ -80,21 +80,13 @@ function releaseClaim(creep: Creep): void {
 // ── Main loop ──
 
 export function run(creep: Creep): boolean {
-  // STATE: carry is full → must deliver/use energy
-  if (creep.store.getFreeCapacity() === 0) {
-    releaseClaim(creep);
+  // STATE: has energy → try to use it (deliver, build, upgrade in priority order)
+  // Only harvest when carry is completely empty.
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
     return doDeliverOrUse(creep);
   }
 
-  // STATE: carry has space → harvest (or deliver if spawn is critically empty)
-  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
-    const spawns = creep.room.find(FIND_MY_SPAWNS);
-    if (spawns.some(s => s.store.getUsedCapacity(RESOURCE_ENERGY) < 100)) {
-      releaseClaim(creep);
-      return doDeliverOrUse(creep);
-    }
-  }
-
+  releaseClaim(creep);
   return doHarvest(creep);
 }
 
