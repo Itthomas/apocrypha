@@ -240,7 +240,7 @@ function getBatches(rcl: number): BatchFn[] {
 
 /** Check if all construction sites from the current batch are built */
 function batchComplete(room: Room): boolean {
-  return room.find(FIND_CONSTRUCTION_SITES).length === 0;
+  return Memory.planner.batchPlaced && room.find(FIND_CONSTRUCTION_SITES).length === 0;
 }
 
 // ── Main entry ──
