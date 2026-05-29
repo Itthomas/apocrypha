@@ -18,6 +18,10 @@ interface PlannerMemory {
   rcl: number;
   batch: number;
   batchPlaced: boolean;
+  /** Repair scan: which RCL we're scanning for destroyed structures */
+  repairRcl?: number;
+  /** Repair scan: which batch within repairRcl we last checked */
+  repairBatch?: number;
 }
 
 type BatchDef = StaticBatchDef | DynamicBatchDef;
@@ -335,6 +339,73 @@ function batchComplete(room: Room): boolean {
   return Memory.planner.batchPlaced && room.find(FIND_CONSTRUCTION_SITES).length === 0;
 }
 
+// ── Repair Scan ──
+
+/**
+ * Walk all batches from RCL 1 up to current RCL, checking for destroyed
+ * structures. When a batch has one or more missing structures, place
+ * construction sites for all of them and stop. Returns true if any sites
+ * were placed.
+ */
+function runRepairScan(room: Room, spawn: StructureSpawn, rcl: number): boolean {
+  // Init scan position
+  if (Memory.planner.repairRcl === undefined) {
+    Memory.planner.repairRcl = 1;
+    Memory.planner.repairBatch = 0;
+  }
+
+  for (let scanRcl = Memory.planner.repairRcl; scanRcl <= rcl; scanRcl++) {
+    const batches = getBatches(scanRcl);
+    const startBatch = scanRcl === Memory.planner.repairRcl ? Memory.planner.repairBatch : 0;
+
+    for (let b = startBatch; b < batches.length; b++) {
+      const batch = batches[b];
+      if (batch.kind !== 'static') continue;
+
+      let placed = 0;
+      for (const entry of batch.entries) {
+        const x = spawn.pos.x + entry.x;
+        const y = spawn.pos.y + entry.y;
+        if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+        if (room.getTerrain().get(x, y) === TERRAIN_MASK_WALL) continue;
+
+        // Already being rebuilt?
+        const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
+        if (sites.length > 0) continue;
+
+        // Structure still exists?
+        const structs = room.lookForAt(LOOK_STRUCTURES, x, y);
+        if (structs.some(s => s.structureType === entry.name)) continue;
+
+        // Destroyed — rebuild
+        if (room.createConstructionSite(x, y, entry.name) === OK) placed++;
+      }
+
+      if (placed > 0) {
+        // Advance scan position past this batch for next time
+        Memory.planner.repairRcl = scanRcl;
+        Memory.planner.repairBatch = b + 1;
+        if (Memory.planner.repairBatch >= batches.length) {
+          Memory.planner.repairRcl = scanRcl + 1;
+          Memory.planner.repairBatch = 0;
+        }
+        // Reset to start if we've scanned past current RCL
+        if (Memory.planner.repairRcl > rcl) {
+          Memory.planner.repairRcl = 1;
+          Memory.planner.repairBatch = 0;
+        }
+        console.log(`[planner] repair RCL${scanRcl} ${batch.label}: ${placed} sites replaced`);
+        return true;
+      }
+    }
+  }
+
+  // Full scan complete — reset for next cycle
+  Memory.planner.repairRcl = 1;
+  Memory.planner.repairBatch = 0;
+  return false;
+}
+
 // ── Main Entry ──
 
 export function runConstructionPlanner(room: Room): void {
@@ -364,6 +435,13 @@ export function runConstructionPlanner(room: Room): void {
 
   // No more batches for this RCL
   if (Memory.planner.batch >= batches.length) return;
+
+  // No construction sites → run repair scan to rebuild destroyed structures.
+  // Only runs when the forward planner is idle (batch already placed, or
+  // all batches complete). One batch of repairs per idle cycle.
+  if (room.find(FIND_CONSTRUCTION_SITES).length === 0) {
+    if (runRepairScan(room, spawn, rcl)) return;
+  }
 
   // Current batch complete → advance
   if (batchComplete(room)) {
