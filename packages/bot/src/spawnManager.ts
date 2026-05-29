@@ -42,7 +42,7 @@ function getQuotas(rcl: number): SpawnQuota[] {
   if (rcl >= 3 && rcl <= 4) {
     return [
       { role: 'miner',    minimum: 1, maximum: 2 },
-      { role: 'survivor', minimum: 3, maximum: 6 },
+      { role: 'survivor', minimum: 3, maximum: 8 },
     ];
   }
 
@@ -100,7 +100,7 @@ const ECO_ADJUST_COOLDOWN = 300;
 
 function runEconomyTracker(room: Room): void {
   if (!Memory.economy) {
-    Memory.economy = { samples: [], softCap: 6, lastAdjustment: 0, nextSample: Game.time };
+    Memory.economy = { samples: [], softCap: 8, lastAdjustment: 0, nextSample: Game.time };
   }
   const econ = Memory.economy as EconomyMemory;
 
@@ -139,7 +139,7 @@ function runEconomyTracker(room: Room): void {
   const fill = econ.samples[econ.samples.length - 1];
   const allHealthy = econ.samples.every(s => s > 0.6);
 
-  const HARD_MIN = 3, HARD_MAX = 6;
+  const HARD_MIN = 3, HARD_MAX = 8;
   if (falls >= 3 && fill < 0.3 && econ.softCap > HARD_MIN) {
     econ.softCap--;
     econ.lastAdjustment = Game.time;
@@ -291,8 +291,34 @@ export function runSpawnManager(room: Room): void {
       if (!spawnGate(quota.role, room)) continue;
     }
 
-    // Get body for this role
-    const body = getBody(quota.role, rcl, room.energyAvailable);
+    // ── Spawn cooldown: wait if full-capacity body is better than what's available now ──
+    if (!Memory.spawnCooldowns) Memory.spawnCooldowns = {};
+    const cooldown = Memory.spawnCooldowns;
+    const role = quota.role;
+
+    // Cooldown active → skip this role
+    if (cooldown[role] && Game.time < cooldown[role]) continue;
+
+    // Get body with current energy
+    const body = getBody(role, rcl, room.energyAvailable);
+
+    // Cooldown just expired → force-spawn with whatever we have
+    if (cooldown[role] && Game.time >= cooldown[role]) {
+      delete cooldown[role];
+      if (!body || body.length === 0) continue; // still nothing affordable — skip
+    } else {
+      // No cooldown active — check if we should wait for a better body
+      const bestBody = getBody(role, rcl, room.energyCapacityAvailable);
+      if (bestBody && body) {
+        const bestCost = bestBody.reduce((sum, p) => sum + BODYPART_COST[p], 0);
+        const curCost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);
+        if (bestCost > curCost && room.energyAvailable < room.energyCapacityAvailable) {
+          cooldown[role] = Game.time + 50;
+          continue;
+        }
+      }
+    }
+
     if (!body || body.length === 0) continue;
 
     const name = quota.role + '_' + Game.time;
