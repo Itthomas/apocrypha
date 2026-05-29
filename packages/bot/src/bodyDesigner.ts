@@ -39,6 +39,7 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
     { minRcl: 7, primary: { work: 0, carry: 24, move: 6 }, fallback: { work: 0, carry: 16, move: 4 } },
   ],
   survivor: [
+    { minRcl: 1, primary: { work: 3, carry: 5, move: 4 }, fallback: { work: 2, carry: 4, move: 2 } },
     { minRcl: 1, primary: { work: 2, carry: 4, move: 2 }, fallback: { work: 1, carry: 3, move: 1 } },
   ],
   builder: [
@@ -79,28 +80,30 @@ function specCost(spec: BodySpec): number {
 
 /**
  * Get the optimal body for a role at the current RCL and energy budget.
- * Returns the highest-RCL-appropriate primary body if affordable,
- * otherwise falls back to the budget variant, otherwise returns null.
+ * Tries all matching tiers (minRcl ≤ current RCL), sorted by cost descending.
+ * Returns the most expensive affordable spec — regardless of which tier it's from.
  */
 export function getBody(role: string, rcl: number, energyAvailable: number): BodyPartConstant[] | null {
   const tiers = BODY_TIERS[role];
   if (!tiers) return null;
 
-  // Find the highest tier applicable to this RCL
-  let bestTier: BodyTier | null = null;
+  // Collect every spec from every matching tier (primary + fallback)
+  const specs: BodySpec[] = [];
   for (const tier of tiers) {
-    if (tier.minRcl <= rcl) bestTier = tier;
-  }
-  if (!bestTier) return null;
-
-  // Try primary first
-  if (specCost(bestTier.primary) <= energyAvailable) {
-    return bodyFromSpec(bestTier.primary);
+    if (tier.minRcl <= rcl) {
+      specs.push(tier.primary);
+      if (tier.fallback) specs.push(tier.fallback);
+    }
   }
 
-  // Fallback
-  if (bestTier.fallback && specCost(bestTier.fallback) <= energyAvailable) {
-    return bodyFromSpec(bestTier.fallback);
+  // Sort by cost descending — best body first
+  specs.sort((a, b) => specCost(b) - specCost(a));
+
+  // Return the most expensive spec we can afford
+  for (const spec of specs) {
+    if (specCost(spec) <= energyAvailable) {
+      return bodyFromSpec(spec);
+    }
   }
 
   return null;

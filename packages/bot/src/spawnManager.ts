@@ -42,7 +42,7 @@ function getQuotas(rcl: number): SpawnQuota[] {
   if (rcl >= 3 && rcl <= 4) {
     return [
       { role: 'miner',    minimum: 1, maximum: 2 },
-      { role: 'survivor', minimum: 2, maximum: 4 },
+      { role: 'survivor', minimum: 3, maximum: 6 },
     ];
   }
 
