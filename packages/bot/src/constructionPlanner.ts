@@ -10,7 +10,7 @@
  * next batch when all construction sites from the current one are built.
  */
 
-import { BLUEPRINT, BlueprintEntry } from './blueprint';
+import { BLUEPRINT, BlueprintEntry, getBlueprintPositions } from './blueprint';
 
 // ── Types ──
 
@@ -61,12 +61,26 @@ function countSites(room: Room, type?: BuildableStructureConstant): number {
 // These are stubs that will be filled in with real placement logic.
 // For now they return 0 (skip) so the planner can advance past them.
 
+/** Cached set of all blueprint-claimed offsets from spawn */
+let _bpPositions: Set<string> | null = null;
+function bpPositions(): Set<string> {
+  if (!_bpPositions) _bpPositions = getBlueprintPositions();
+  return _bpPositions;
+}
+
+/** True if (absX, absY) falls inside the blueprint footprint */
+function isBlueprintInterior(absX: number, absY: number, spawn: StructureSpawn): boolean {
+  return bpPositions().has(`${absX - spawn.pos.x},${absY - spawn.pos.y}`);
+}
+
 function placeRoadsToSources(room: Room, spawn: StructureSpawn): number {
   const sources = room.find(FIND_SOURCES);
   let placed = 0;
   for (const source of sources) {
     const path = room.findPath(spawn.pos, source.pos, { ignoreCreeps: true, swampCost: 1 });
     for (const step of path) {
+      // Don't pave over blueprint interior — the static road grid handles those tiles
+      if (isBlueprintInterior(step.x, step.y, spawn)) continue;
       if (placeIfNew(room, step.x, step.y, STRUCTURE_ROAD)) placed++;
     }
   }
@@ -78,6 +92,7 @@ function placeRoadToController(room: Room, spawn: StructureSpawn): number {
   let placed = 0;
   const path = room.findPath(spawn.pos, room.controller.pos, { ignoreCreeps: true, swampCost: 1 });
   for (const step of path) {
+    if (isBlueprintInterior(step.x, step.y, spawn)) continue;
     if (placeIfNew(room, step.x, step.y, STRUCTURE_ROAD)) placed++;
   }
   return placed;

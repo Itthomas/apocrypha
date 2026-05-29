@@ -398,3 +398,20 @@ export function getStaticBatch(rcl: number, batch: number): BlueprintEntry[] | n
 export function hasBatch(rcl: number, batch: number): boolean {
   return BLUEPRINT[rcl]?.[batch] !== undefined;
 }
+
+/**
+ * All spawn-relative (x,y) positions claimed by the blueprint across every
+ * RCL and batch. Used to prevent the dynamic road autorouter from cutting
+ * through blueprint interior — the static road grid handles those tiles.
+ */
+export function getBlueprintPositions(): Set<string> {
+  const set = new Set<string>();
+  for (const rcl of Object.keys(BLUEPRINT)) {
+    for (const batch of Object.keys(BLUEPRINT[parseInt(rcl, 10)])) {
+      for (const entry of BLUEPRINT[parseInt(rcl, 10)][parseInt(batch, 10)]) {
+        set.add(`${entry.x},${entry.y}`);
+      }
+    }
+  }
+  return set;
+}
