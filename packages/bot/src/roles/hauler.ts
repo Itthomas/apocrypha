@@ -11,7 +11,8 @@
  *     carry ≥50 → next unsatisified target
  *     carry <50 → GATHER
  *
- * Fill priority: spawn → extensions → tower → overflow container → controller container
+ * Fill priority tiers (within each tier, nearest structure wins):
+ *   spawn → extensions → tower → storage → spawn container → controller container
  */
 
 enum HAULER_TASK {
@@ -26,69 +27,116 @@ interface HaulerMemory {
   targetId?: Id<AnyStoreStructure>;
 }
 
-const FILL_PRIORITY: StructureConstant[] = [
-  STRUCTURE_SPAWN,
-  STRUCTURE_EXTENSION,
-  STRUCTURE_TOWER,
-  STRUCTURE_CONTAINER, // overflow, then controller — determined by position context
+// ── Priority Tier Helpers ──
+
+/**
+ * A fill-priority tier: given a room, return every unsatisfied structure
+ * of this tier's type. getNextFillTarget() picks the nearest one per tier.
+ */
+type FillTier = (room: Room, creep: Creep) => AnyStoreStructure[];
+
+/** All spawns with free energy capacity */
+function tierSpawns(room: Room, _creep: Creep): AnyStoreStructure[] {
+  return room.find(FIND_MY_SPAWNS, {
+    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  });
+}
+
+/** All extensions with free energy capacity */
+function tierExtensions(room: Room, _creep: Creep): AnyStoreStructure[] {
+  return room.find(FIND_MY_STRUCTURES, {
+    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  });
+}
+
+/** All my towers below 90% energy */
+function tierTowers(room: Room, _creep: Creep): AnyStoreStructure[] {
+  return room.find(FIND_MY_STRUCTURES, {
+    filter: s => {
+      if (s.structureType !== STRUCTURE_TOWER) return false;
+      return s.store.getUsedCapacity(RESOURCE_ENERGY) < s.store.getCapacity(RESOURCE_ENERGY) * 0.9;
+    }
+  });
+}
+
+/** Storage (if present) below 80% — sits between towers and containers */
+function tierStorage(room: Room, _creep: Creep): AnyStoreStructure[] {
+  return room.find(FIND_MY_STRUCTURES, {
+    filter: s => {
+      if (s.structureType !== STRUCTURE_STORAGE) return false;
+      const st = s as StructureStorage;
+      return st.store.getUsedCapacity(RESOURCE_ENERGY) < st.store.getCapacity(RESOURCE_ENERGY) * 0.8;
+    }
+  });
+}
+
+/** Containers within 3 tiles of any spawn, below 80% — overflow buffers */
+function tierSpawnContainers(room: Room, creep: Creep): AnyStoreStructure[] {
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length === 0) return [];
+
+  const results: AnyStoreStructure[] = [];
+  for (const spawn of spawns) {
+    const nearby = spawn.pos.findInRange(FIND_STRUCTURES, 3, {
+      filter: s => {
+        if (s.structureType !== STRUCTURE_CONTAINER) return false;
+        const store = (s as StructureContainer).store;
+        return store.getUsedCapacity(RESOURCE_ENERGY) < store.getCapacity(RESOURCE_ENERGY) * 0.8;
+      }
+    });
+    for (const c of nearby) results.push(c as AnyStoreStructure);
+  }
+  return results;
+}
+
+/** Container adjacent to the room controller, below 80% */
+function tierControllerContainer(room: Room, _creep: Creep): AnyStoreStructure[] {
+  if (!room.controller) return [];
+  return room.controller.pos.findInRange(FIND_STRUCTURES, 1, {
+    filter: s => {
+      if (s.structureType !== STRUCTURE_CONTAINER) return false;
+      const store = (s as StructureContainer).store;
+      return store.getUsedCapacity(RESOURCE_ENERGY) < store.getCapacity(RESOURCE_ENERGY) * 0.8;
+    }
+  }) as AnyStoreStructure[];
+}
+
+/** Priority-ordered tiers. Checked top to bottom; first non-empty tier wins. */
+const FILL_TIERS: FillTier[] = [
+  tierSpawns,
+  tierExtensions,
+  tierTowers,
+  tierStorage,
+  tierSpawnContainers,
+  tierControllerContainer,
 ];
 
-/** Returns the highest-priority structure that isn't satisfied (has free capacity) */
+/**
+ * Walk priority tiers top-to-bottom. Within the first tier that has
+ * any unsatisfied structures, return the one nearest to the creep.
+ */
 function getNextFillTarget(creep: Creep): AnyStoreStructure | null {
   const room = creep.room;
 
-  // 1. Spawn
-  const spawn = room.find(FIND_MY_SPAWNS, {
-    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  })[0];
-  if (spawn) return spawn;
-
-  // 2. Extensions
-  const ext = room.find(FIND_MY_STRUCTURES, {
-    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  })[0];
-  if (ext) return ext;
-
-  // 3. Tower
-  const tower = room.find(FIND_MY_STRUCTURES, {
-    filter: s => s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  })[0];
-  if (tower) return tower;
-
-  // 4. Spawn overflow container (within 3 tiles of spawn, below 80%)
-  const spawns = room.find(FIND_MY_SPAWNS);
-  if (spawns.length > 0) {
-    const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-      filter: s => {
-        if (s.structureType !== STRUCTURE_CONTAINER) return false;
-        const store = (s as StructureContainer).store;
-        return store.getFreeCapacity(RESOURCE_ENERGY) > store.getCapacity(RESOURCE_ENERGY) * 0.2;
-      }
-    })[0];
-    if (overflow) return overflow as AnyStoreStructure;
-  }
-
-  // 5. Controller container (below 80%)
-  const controller = room.controller;
-  if (controller) {
-    const ct = controller.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => {
-        if (s.structureType !== STRUCTURE_CONTAINER) return false;
-        const store = (s as StructureContainer).store;
-        return store.getFreeCapacity(RESOURCE_ENERGY) > store.getCapacity(RESOURCE_ENERGY) * 0.2;
-      }
-    })[0];
-    if (ct) return ct as AnyStoreStructure;
+  for (const tier of FILL_TIERS) {
+    const candidates = tier(room, creep);
+    if (candidates.length > 0) {
+      const nearest = creep.pos.findClosestByPath(candidates);
+      if (nearest) return nearest;
+    }
   }
 
   return null;
 }
 
-/** Returns true if a fill target is considered satisfied */
+/**
+ * Returns true when a fill target no longer needs energy.
+ * Spawns/extensions/towers/storage: satisfied only when completely full.
+ * Containers: satisfied at 80% — they act as passthrough buffers and
+ *   get simultaneously drained by other haulers, so chasing 100% is futile.
+ */
 function isTargetSatisfied(target: AnyStoreStructure): boolean {
-  const free = target.store.getFreeCapacity(RESOURCE_ENERGY);
-  if (free <= 0) return true;
-  // Containers are satisfied at 80% — they get drained simultaneously
+  if (target.store.getFreeCapacity(RESOURCE_ENERGY) <= 0) return true;
   if (target.structureType === STRUCTURE_CONTAINER) {
     const cap = target.store.getCapacity(RESOURCE_ENERGY);
     return target.store.getUsedCapacity(RESOURCE_ENERGY) >= cap * 0.8;
@@ -96,16 +144,20 @@ function isTargetSatisfied(target: AnyStoreStructure): boolean {
   return false;
 }
 
-/** Find a source container (adjacent to a source) with ≥100 energy */
+/** Find the nearest source container (adjacent to a source) with ≥100 energy */
 function getSourceContainer(creep: Creep): StructureContainer | null {
   const sources = creep.room.find(FIND_SOURCES);
+  const candidates: StructureContainer[] = [];
+
   for (const source of sources) {
     const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
       filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
     });
-    if (containers.length > 0) return containers[0] as StructureContainer;
+    for (const c of containers) candidates.push(c as StructureContainer);
   }
-  return null;
+
+  if (candidates.length === 0) return null;
+  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
 }
 
 // ── Main ──
