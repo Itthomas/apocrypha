@@ -108,16 +108,19 @@ function runEconomyTracker(room: Room): void {
   if (Game.time >= econ.nextSample) {
     econ.nextSample = Game.time + ECO_SAMPLE_INTERVAL;
 
-    let energy = 0;
+    let energy = 0, capacity = 0;
     const sources = room.find(FIND_SOURCES);
     for (const source of sources) {
       const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
         filter: s => s.structureType === STRUCTURE_CONTAINER
       });
-      for (const c of containers) energy += c.store.getUsedCapacity(RESOURCE_ENERGY);
+      for (const c of containers) {
+        energy += c.store.getUsedCapacity(RESOURCE_ENERGY);
+        capacity += c.store.getCapacity(RESOURCE_ENERGY);
+      }
     }
 
-    econ.samples.push(energy);
+    econ.samples.push(capacity > 0 ? energy / capacity : 0);
     if (econ.samples.length > ECO_MAX_SAMPLES) econ.samples.shift();
   }
 
@@ -133,23 +136,15 @@ function runEconomyTracker(room: Room): void {
     else { rises = 0; falls = 0; }
   }
 
-  // Current fill ratio of source containers
-  let cap = 0, cur = econ.samples[econ.samples.length - 1];
-  for (const source of room.find(FIND_SOURCES)) {
-    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    });
-    for (const c of containers) cap += c.store.getCapacity(RESOURCE_ENERGY);
-  }
-  if (cap === 0) return;
-  const fill = cur / cap;
+  const fill = econ.samples[econ.samples.length - 1];
+  const allHealthy = econ.samples.every(s => s > 0.6);
 
   const HARD_MIN = 3, HARD_MAX = 6;
   if (falls >= 3 && fill < 0.3 && econ.softCap > HARD_MIN) {
     econ.softCap--;
     econ.lastAdjustment = Game.time;
     console.log(`[economy] ↓ softCap=${econ.softCap} (energy declining, fill=${(fill*100).toFixed(0)}%)`);
-  } else if (rises >= 5 && fill > 0.6 && econ.softCap < HARD_MAX) {
+  } else if ((rises >= 5 && fill > 0.6 || allHealthy) && econ.softCap < HARD_MAX) {
     econ.softCap++;
     econ.lastAdjustment = Game.time;
     console.log(`[economy] ↑ softCap=${econ.softCap} (energy rising, fill=${(fill*100).toFixed(0)}%)`);
