@@ -335,37 +335,48 @@ function doHarvest(creep: Creep): boolean {
 /** Find the nearest source container with ≥ minEnergy (default 100).
  * Pass creep.store.getFreeCapacity() to only target containers that
  * can fully fill the creep's inventory. */
-function getSourceContainer(creep: Creep, minEnergy: number = 100): StructureContainer | null {
-  const sources = creep.room.find(FIND_SOURCES);
-  const candidates: StructureContainer[] = [];
+function getSourceContainer(creep: Creep, minEnergy: number = 100): AnyStoreStructure | null {
+  const candidates: AnyStoreStructure[] = [];
 
+  // Source containers
+  const sources = creep.room.find(FIND_SOURCES);
   for (const source of sources) {
     const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
       filter: s =>
         s.structureType === STRUCTURE_CONTAINER &&
         s.store.getUsedCapacity(RESOURCE_ENERGY) >= minEnergy
     });
-    for (const c of containers) candidates.push(c as StructureContainer);
+    for (const c of containers) candidates.push(c as AnyStoreStructure);
+  }
+
+  // Storage (if it has enough energy to fill us)
+  const storage = creep.room.storage;
+  if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) >= minEnergy) {
+    candidates.push(storage as AnyStoreStructure);
   }
 
   if (candidates.length === 0) return null;
-  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
+  return creep.pos.findClosestByPath(candidates);
 }
 
-/** Find the nearest source container regardless of energy level */
-function getNearestSourceContainer(creep: Creep): StructureContainer | null {
-  const sources = creep.room.find(FIND_SOURCES);
-  const candidates: StructureContainer[] = [];
+/** Find the nearest source container or storage, regardless of energy level */
+function getNearestSourceContainer(creep: Creep): AnyStoreStructure | null {
+  const candidates: AnyStoreStructure[] = [];
 
+  // Source containers
+  const sources = creep.room.find(FIND_SOURCES);
   for (const source of sources) {
     const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
       filter: s => s.structureType === STRUCTURE_CONTAINER
     });
-    for (const c of containers) candidates.push(c as StructureContainer);
+    for (const c of containers) candidates.push(c as AnyStoreStructure);
   }
 
+  // Storage
+  if (creep.room.storage) candidates.push(creep.room.storage as AnyStoreStructure);
+
   if (candidates.length === 0) return null;
-  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
+  return creep.pos.findClosestByPath(candidates);
 }
 
 // ── Deliver ──
