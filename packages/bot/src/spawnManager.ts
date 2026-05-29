@@ -81,8 +81,87 @@ function containersBuilt(room: Room): boolean {
   return true;
 }
 
-/** Smart survivor spawn gate for RCL 3+ */
+// ── Economy Tracker (container energy moving average) ──
+
+interface EconomyMemory {
+  /** Rolling samples of total source container energy (max 5) */
+  samples: number[];
+  /** Soft cap for survivors, floats between hard min and max */
+  softCap: number;
+  /** Tick of last cap adjustment */
+  lastAdjustment: number;
+  /** Next tick to collect a sample */
+  nextSample: number;
+}
+
+const ECO_SAMPLE_INTERVAL = 30;
+const ECO_MAX_SAMPLES = 5;
+const ECO_ADJUST_COOLDOWN = 300;
+
+function runEconomyTracker(room: Room): void {
+  if (!Memory.economy) {
+    Memory.economy = { samples: [], softCap: 6, lastAdjustment: 0, nextSample: Game.time };
+  }
+  const econ = Memory.economy as EconomyMemory;
+
+  // Sample total energy in source containers every ECO_SAMPLE_INTERVAL ticks
+  if (Game.time >= econ.nextSample) {
+    econ.nextSample = Game.time + ECO_SAMPLE_INTERVAL;
+
+    let energy = 0;
+    const sources = room.find(FIND_SOURCES);
+    for (const source of sources) {
+      const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+        filter: s => s.structureType === STRUCTURE_CONTAINER
+      });
+      for (const c of containers) energy += c.store.getUsedCapacity(RESOURCE_ENERGY);
+    }
+
+    econ.samples.push(energy);
+    if (econ.samples.length > ECO_MAX_SAMPLES) econ.samples.shift();
+  }
+
+  // Need 3+ samples and cooldown clear before adjusting
+  if (econ.samples.length < 3) return;
+  if (Game.time - econ.lastAdjustment < ECO_ADJUST_COOLDOWN) return;
+
+  // Count consecutive rises / declines
+  let rises = 0, falls = 0;
+  for (let i = 1; i < econ.samples.length; i++) {
+    if (econ.samples[i] < econ.samples[i - 1]) { falls++; rises = 0; }
+    else if (econ.samples[i] > econ.samples[i - 1]) { rises++; falls = 0; }
+    else { rises = 0; falls = 0; }
+  }
+
+  // Current fill ratio of source containers
+  let cap = 0, cur = econ.samples[econ.samples.length - 1];
+  for (const source of room.find(FIND_SOURCES)) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+    for (const c of containers) cap += c.store.getCapacity(RESOURCE_ENERGY);
+  }
+  if (cap === 0) return;
+  const fill = cur / cap;
+
+  const HARD_MIN = 3, HARD_MAX = 6;
+  if (falls >= 3 && fill < 0.3 && econ.softCap > HARD_MIN) {
+    econ.softCap--;
+    econ.lastAdjustment = Game.time;
+    console.log(`[economy] ↓ softCap=${econ.softCap} (energy declining, fill=${(fill*100).toFixed(0)}%)`);
+  } else if (rises >= 5 && fill > 0.6 && econ.softCap < HARD_MAX) {
+    econ.softCap++;
+    econ.lastAdjustment = Game.time;
+    console.log(`[economy] ↑ softCap=${econ.softCap} (energy rising, fill=${(fill*100).toFixed(0)}%)`);
+  }
+}
 function survivorGateRcl3(room: Room): boolean {
+  // Soft cap from economy tracker — don't spawn beyond what the
+  // container buffer can sustain
+  const econ = Memory.economy as EconomyMemory | undefined;
+  const survivorCount = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'survivor').length;
+  if (econ && survivorCount >= econ.softCap) return false;
+
   const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
 
   // If required containers aren't built yet, survivors stay active to build them
@@ -188,6 +267,9 @@ function spawnGate(role: string, room: Room): boolean {
 
 /** Run spawn logic for one room. Call once per tick. */
 export function runSpawnManager(room: Room): void {
+  // Update economy tracker (container energy moving average + soft cap)
+  runEconomyTracker(room);
+
   const spawns = room.find(FIND_MY_SPAWNS).filter(s => !s.spawning);
   if (spawns.length === 0) return;
 
