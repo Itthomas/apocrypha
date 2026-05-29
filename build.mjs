@@ -33,6 +33,7 @@ const modules = {
   'constructionPlanner':  'constructionPlanner.ts',
   'telemetry':            'telemetry/index.ts',
   'mantra':               'mantra.ts',
+  'tower':                'tower.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)

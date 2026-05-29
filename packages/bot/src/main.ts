@@ -15,6 +15,7 @@ var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
 var roleSurvivor = require('role.survivor');
 var mantra = require('mantra');
+var tower = require('tower');
 
 // Map role names to module run functions
 var roleModules: Record<string, any> | null = null;
@@ -61,6 +62,7 @@ export function loop(): void {
     var room = Game.rooms[roomName];
     if (room.controller && room.controller.my) {
       constructionPlanner.runConstructionPlanner(room);
+      tower.runTowers(room);
     }
   }
 

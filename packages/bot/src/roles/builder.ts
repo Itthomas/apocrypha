@@ -6,9 +6,13 @@
  *   BUILD: build nearest construction site or repair nearest damaged structure
  *
  * Never harvests from sources — only pulls from the overflow container.
- * Builds nearest construction site. Repairs structures below 50% hp (no walls/ramparts).
+ * Builds nearest construction site. Repairs structures below 50% hp.
+ * Ramparts use an RCL-gated artificial health threshold instead of their
+ * astronomical actual max health.
  * Switches between GATHER and BUILD as carry empties/fills.
  */
+
+import { getRampartRepairThreshold } from '../tower';
 
 enum BUILDER_TASK {
   GATHER = 0,
@@ -71,12 +75,23 @@ function doBuildOrRepair(creep: Creep): boolean {
     return doGather(creep);
   }
 
-  // 1. Repair nearest damaged structure below 50% (exclude walls/ramparts)
+  // 1. Repair nearest damaged structure below 50% health.
+  //    Ramparts use the RCL-gated artificial threshold (e.g. 20k at RCL 5)
+  //    instead of their actual max health. Walls are ignored entirely.
+  const rcl = creep.room.controller?.level ?? 0;
+  const rampartThreshold = getRampartRepairThreshold(rcl);
   const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-    filter: s =>
-      s.hits < s.hitsMax * 0.5 &&
-      s.structureType !== STRUCTURE_WALL &&
-      s.structureType !== STRUCTURE_RAMPART
+    filter: s => {
+      if (s.structureType === STRUCTURE_WALL) return false;
+
+      if (s.structureType === STRUCTURE_RAMPART) {
+        if (rampartThreshold === 0) return false;
+        const effectiveMax = Math.min(s.hitsMax, rampartThreshold);
+        return s.hits < effectiveMax * 0.5;
+      }
+
+      return s.hits < s.hitsMax * 0.5;
+    }
   });
   if (damaged) {
     const result = creep.repair(damaged);

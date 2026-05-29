@@ -14,6 +14,7 @@
  */
 
 import { trackHarvest } from '../telemetry';
+import { getRampartRepairThreshold } from '../tower';
 
 enum TASK {
   HARVEST = 0,
@@ -83,6 +84,17 @@ function releaseClaim(creep: Creep): void {
 
 // ── Task switching ──
 
+/** True if a structure is fully repaired. Ramparts use the artificial
+ *  RCL-gated threshold instead of their actual max health. */
+function isRepairDone(s: AnyStructure, rampartThreshold: number): boolean {
+  if (s.structureType === STRUCTURE_RAMPART) {
+    if (rampartThreshold === 0) return true; // shouldn't be a target anyway
+    const effectiveMax = Math.min(s.hitsMax, rampartThreshold);
+    return s.hits >= effectiveMax;
+  }
+  return s.hits >= s.hitsMax;
+}
+
 /** Returns the next task to switch to, based on priority and availability */
 function chooseTask(creep: Creep): TASK {
   // DELIVER: spawn or extensions need energy AND we have energy to give
@@ -95,13 +107,23 @@ function chooseTask(creep: Creep): TASK {
     return TASK.DELIVER;
   }
 
-  // REPAIR: damaged structures below 50% hp (excluding walls and ramparts)
+  // REPAIR: damaged structures below 50% hp.
+  // Ramparts use the RCL-gated artificial threshold instead of actual max health.
   if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    const rcl = creep.room.controller?.level ?? 0;
+    const rampartThreshold = getRampartRepairThreshold(rcl);
     const damaged = creep.room.find(FIND_STRUCTURES, {
-      filter: s =>
-        s.hits < s.hitsMax * 0.5 &&
-        s.structureType !== STRUCTURE_WALL &&
-        s.structureType !== STRUCTURE_RAMPART
+      filter: s => {
+        if (s.structureType === STRUCTURE_WALL) return false;
+
+        if (s.structureType === STRUCTURE_RAMPART) {
+          if (rampartThreshold === 0) return false;
+          const effectiveMax = Math.min(s.hitsMax, rampartThreshold);
+          return s.hits < effectiveMax * 0.5;
+        }
+
+        return s.hits < s.hitsMax * 0.5;
+      }
     });
     if (damaged.length > 0) return TASK.REPAIR;
   }
@@ -168,6 +190,9 @@ export function run(creep: Creep): boolean {
 
   // REPAIR: repair nearest damaged structure until full or out of energy
   if (mem.task === TASK.REPAIR) {
+    const rcl = creep.room.controller?.level ?? 0;
+    const rampartThreshold = getRampartRepairThreshold(rcl);
+
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       setTask(creep, TASK.HARVEST);
       return run(creep);
@@ -175,15 +200,23 @@ export function run(creep: Creep): boolean {
     // Validate current repair target
     if (mem.repairTargetId) {
       const target = Game.getObjectById(mem.repairTargetId);
-      if (!target || target.hits >= target.hitsMax) mem.repairTargetId = undefined;
+      if (!target || isRepairDone(target, rampartThreshold)) mem.repairTargetId = undefined;
     }
-    // Find nearest repairable structure below 50% (exclude walls/ramparts)
+    // Find nearest repairable structure below 50%.
+    // Ramparts use the RCL-gated artificial threshold.
     if (!mem.repairTargetId) {
       const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-        filter: s =>
-          s.hits < s.hitsMax * 0.5 &&
-          s.structureType !== STRUCTURE_WALL &&
-          s.structureType !== STRUCTURE_RAMPART
+        filter: s => {
+          if (s.structureType === STRUCTURE_WALL) return false;
+
+          if (s.structureType === STRUCTURE_RAMPART) {
+            if (rampartThreshold === 0) return false;
+            const effectiveMax = Math.min(s.hitsMax, rampartThreshold);
+            return s.hits < effectiveMax * 0.5;
+          }
+
+          return s.hits < s.hitsMax * 0.5;
+        }
       });
       if (damaged) mem.repairTargetId = damaged.id;
     }
@@ -197,7 +230,7 @@ export function run(creep: Creep): boolean {
     const result = creep.repair(target);
     if (result === ERR_NOT_IN_RANGE) creep.moveTo(target);
     // If fully repaired, clear target
-    if (target.hits >= target.hitsMax) mem.repairTargetId = undefined;
+    if (isRepairDone(target, rampartThreshold)) mem.repairTargetId = undefined;
     return true;
   }
 
