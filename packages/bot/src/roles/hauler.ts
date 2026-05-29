@@ -53,21 +53,33 @@ function doGather(creep: Creep): boolean {
     return doDeliver(creep);
   }
 
-  // Find source containers with energy (exclude spawn overflow and controller containers)
-  const containers = creep.room.find(FIND_STRUCTURES, {
-    filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
-  });
-
-  // Sort by distance
-  containers.sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));
-
-  if (containers.length > 0) {
-    const result = creep.withdraw(containers[0], RESOURCE_ENERGY);
-    if (result === ERR_NOT_IN_RANGE) creep.moveTo(containers[0]);
-    return true;
+  // Only withdraw from SOURCE containers (adjacent to a source)
+  // Never withdraw from overflow or controller containers — that causes loops
+  const sources = creep.room.find(FIND_SOURCES);
+  const sourceContainerIds = new Set<string>();
+  for (const source of sources) {
+    const nearby = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+    for (const c of nearby) sourceContainerIds.add(c.id);
   }
 
-  // No containers with energy — wait near spawn
+  const containers = creep.room.find(FIND_STRUCTURES, {
+    filter: s =>
+      s.structureType === STRUCTURE_CONTAINER &&
+      sourceContainerIds.has(s.id) &&
+      s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
+  });
+
+  if (containers.length > 0) {
+    const target = creep.pos.findClosestByPath(containers);
+    if (target) {
+      if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(target);
+      return true;
+    }
+  }
+
+  // No source containers with energy — wait near spawn
   const spawns = creep.room.find(FIND_MY_SPAWNS);
   if (spawns.length > 0 && !creep.pos.isNearTo(spawns[0])) {
     creep.moveTo(spawns[0]);
@@ -128,7 +140,10 @@ function doDeliver(creep: Creep): boolean {
     }
   }
 
-  // Nowhere to deliver — switch to gather (even if carry isn't empty, to avoid loops)
-  (creep.memory as HaulerMemory).task = HAULER_TASK.GATHER;
+  // Nowhere to deliver — idle near spawn. Don't switch to GATHER with full carry.
+  const spawns = creep.room.find(FIND_MY_SPAWNS);
+  if (spawns.length > 0 && !creep.pos.isNearTo(spawns[0])) {
+    creep.moveTo(spawns[0]);
+  }
   return true;
 }
