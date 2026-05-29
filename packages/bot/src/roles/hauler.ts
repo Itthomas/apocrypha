@@ -1,149 +1,148 @@
 /**
  * roles/hauler.ts — Energy transport creep
  *
- * State machine:
- *   GATHER: lock onto a source container, withdraw until carry is full
- *   DELIVER: lock onto a delivery job in priority order:
- *     1. Fill spawn + extensions
- *     2. Fill spawn overflow container (<80% full)
- *     3. Fill controller container (<80% full)
+ * Two-state machine:
+ *   GATHER:  locked onto a source container, withdraw until carry is full
+ *   FILLING: locked onto a target structure, fill it until satisfied
  *
- * After withdrawing from a source container, switches to DELIVER.
- * After delivering (carry empty or no job), switches back to GATHER.
+ * Transitions:
+ *   GATHER → carry full → FILLING (highest-priority unsatisified target)
+ *   FILLING → target filled (or was already full) →
+ *     carry ≥50 → next unsatisified target
+ *     carry <50 → GATHER
  *
- * Body: CARRY + MOVE only, no WORK parts. Fast when empty.
+ * Fill priority: spawn → extensions → tower → overflow container → controller container
  */
 
 enum HAULER_TASK {
   GATHER = 0,
-  DELIVER = 1,
+  FILLING = 1,
 }
 
 interface HaulerMemory {
   role: 'hauler';
   task: HAULER_TASK;
+  /** Locked target structure ID during FILLING */
+  targetId?: Id<AnyStoreStructure>;
 }
+
+const FILL_PRIORITY: StructureConstant[] = [
+  STRUCTURE_SPAWN,
+  STRUCTURE_EXTENSION,
+  STRUCTURE_TOWER,
+  STRUCTURE_CONTAINER, // overflow, then controller — determined by position context
+];
+
+/** Returns the highest-priority structure that isn't satisfied (has free capacity) */
+function getNextFillTarget(creep: Creep): AnyStoreStructure | null {
+  const room = creep.room;
+
+  // 1. Spawn
+  const spawn = room.find(FIND_MY_SPAWNS, {
+    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  })[0];
+  if (spawn) return spawn;
+
+  // 2. Extensions
+  const ext = room.find(FIND_MY_STRUCTURES, {
+    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  })[0];
+  if (ext) return ext;
+
+  // 3. Tower
+  const tower = room.find(FIND_MY_STRUCTURES, {
+    filter: s => s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  })[0];
+  if (tower) return tower;
+
+  // 4. Spawn overflow container (within 3 tiles of spawn)
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length > 0) {
+    const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    })[0];
+    if (overflow) return overflow as AnyStoreStructure;
+  }
+
+  // 5. Controller container
+  const controller = room.controller;
+  if (controller) {
+    const ct = controller.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    })[0];
+    if (ct) return ct as AnyStoreStructure;
+  }
+
+  return null;
+}
+
+/** Find a source container (adjacent to a source) with ≥100 energy */
+function getSourceContainer(creep: Creep): StructureContainer | null {
+  const sources = creep.room.find(FIND_SOURCES);
+  for (const source of sources) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
+    });
+    if (containers.length > 0) return containers[0] as StructureContainer;
+  }
+  return null;
+}
+
+// ── Main ──
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as HaulerMemory;
   if (mem.task === undefined) mem.task = HAULER_TASK.GATHER;
 
-  // Carry empty → switch to GATHER
-  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0 && mem.task !== HAULER_TASK.GATHER) {
-    mem.task = HAULER_TASK.GATHER;
-  }
-  // Carry full → switch to DELIVER
-  if (creep.store.getFreeCapacity() === 0 && mem.task !== HAULER_TASK.DELIVER) {
-    mem.task = HAULER_TASK.DELIVER;
-  }
-
+  // GATHER: locked onto source container, fill carry
   if (mem.task === HAULER_TASK.GATHER) {
-    return doGather(creep);
-  }
+    // Transition: carry full → pick highest-priority fill target
+    if (creep.store.getFreeCapacity() === 0) {
+      const target = getNextFillTarget(creep);
+      if (target) {
+        mem.task = HAULER_TASK.FILLING;
+        mem.targetId = target.id;
+        return run(creep);
+      }
+      // No fill targets available — idle with full carry
+      return false;
+    }
 
-  return doDeliver(creep);
-}
-
-// ── GATHER: withdraw from nearest source container with energy ──
-
-function doGather(creep: Creep): boolean {
-  // If carry is full, switch to deliver
-  if (creep.store.getFreeCapacity() === 0) {
-    (creep.memory as HaulerMemory).task = HAULER_TASK.DELIVER;
-    return doDeliver(creep);
-  }
-
-  // Only withdraw from SOURCE containers (adjacent to a source)
-  // Never withdraw from overflow or controller containers — that causes loops
-  const sources = creep.room.find(FIND_SOURCES);
-  const sourceContainerIds = new Set<string>();
-  for (const source of sources) {
-    const nearby = source.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    });
-    for (const c of nearby) sourceContainerIds.add(c.id);
-  }
-
-  const containers = creep.room.find(FIND_STRUCTURES, {
-    filter: s =>
-      s.structureType === STRUCTURE_CONTAINER &&
-      sourceContainerIds.has(s.id) &&
-      s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
-  });
-
-  if (containers.length > 0) {
-    const target = creep.pos.findClosestByPath(containers);
-    if (target) {
-      if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(target);
+    const source = getSourceContainer(creep);
+    if (source) {
+      if (creep.withdraw(source, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(source);
       return true;
     }
+    // No source container with energy — wait
+    return false;
   }
 
-  // No source containers with energy — wait near spawn
-  const spawns = creep.room.find(FIND_MY_SPAWNS);
-  if (spawns.length > 0 && !creep.pos.isNearTo(spawns[0])) {
-    creep.moveTo(spawns[0]);
-  }
-  return true;
-}
+  // FILLING: locked onto a target structure
+  if (mem.task === HAULER_TASK.FILLING) {
+    // Validate our target still exists and still needs filling
+    const target = mem.targetId ? Game.getObjectById(mem.targetId) as AnyStoreStructure | null : null;
+    if (!target || target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+      // Target is satisfied (filled or gone)
+      if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
+        // Still have meaningful energy → next target
+        const next = getNextFillTarget(creep);
+        if (next) {
+          mem.targetId = next.id;
+          return run(creep);
+        }
+      }
+      // Carry < 50 or no more targets → go gather
+      mem.targetId = undefined;
+      mem.task = HAULER_TASK.GATHER;
+      return run(creep);
+    }
 
-// ── DELIVER: fill structures in priority order ──
-
-function doDeliver(creep: Creep): boolean {
-  // Carry empty → switch back to gather
-  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-    (creep.memory as HaulerMemory).task = HAULER_TASK.GATHER;
-    return doGather(creep);
-  }
-
-  // 1. Fill spawn
-  const spawn = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-    filter: s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  });
-  if (spawn) {
-    if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(spawn);
+    // Fill the target
+    if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(target);
+    }
     return true;
   }
 
-  // 2. Fill extensions
-  const ext = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  });
-  if (ext) {
-    if (creep.transfer(ext, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(ext);
-    return true;
-  }
-
-  // 3. Fill spawn overflow container (below 80%)
-  const spawns = creep.room.find(FIND_MY_SPAWNS);
-  if (spawns.length > 0) {
-    const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER &&
-        (s as StructureContainer).store.getFreeCapacity(RESOURCE_ENERGY) > (s as StructureContainer).store.getCapacity(RESOURCE_ENERGY) * 0.2
-    })[0];
-    if (overflow) {
-      if (creep.transfer(overflow, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(overflow);
-      return true;
-    }
-  }
-
-  // 4. Fill controller container (below 80%)
-  const controller = creep.room.controller;
-  if (controller) {
-    const ctrlContainer = controller.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER &&
-        (s as StructureContainer).store.getFreeCapacity(RESOURCE_ENERGY) > (s as StructureContainer).store.getCapacity(RESOURCE_ENERGY) * 0.2
-    })[0];
-    if (ctrlContainer) {
-      if (creep.transfer(ctrlContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(ctrlContainer);
-      return true;
-    }
-  }
-
-  // Nowhere to deliver — idle near spawn. Don't switch to GATHER with full carry.
-  const spawns = creep.room.find(FIND_MY_SPAWNS);
-  if (spawns.length > 0 && !creep.pos.isNearTo(spawns[0])) {
-    creep.moveTo(spawns[0]);
-  }
-  return true;
+  return false;
 }
