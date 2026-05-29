@@ -54,16 +54,32 @@ function getNearestSourceContainer(creep: Creep): StructureContainer | null {
   return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
 }
 
+/** Find the nearest source container with at least minEnergy stored */
+function getSourceContainer(creep: Creep, minEnergy: number): StructureContainer | null {
+  const sources = creep.room.find(FIND_SOURCES);
+  const candidates: StructureContainer[] = [];
+  for (const source of sources) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+      filter: s =>
+        s.structureType === STRUCTURE_CONTAINER &&
+        s.store.getUsedCapacity(RESOURCE_ENERGY) >= minEnergy
+    });
+    for (const c of containers) candidates.push(c as StructureContainer);
+  }
+  if (candidates.length === 0) return null;
+  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
+}
+
 function doGather(creep: Creep): boolean {
-  const container = getNearestSourceContainer(creep);
+  // Prefer a container that can fully fill us
+  const container = getSourceContainer(creep, creep.store.getFreeCapacity())
+    || getNearestSourceContainer(creep);
   if (container) {
-    // Withdraw if in range, move toward it otherwise
     if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
       creep.moveTo(container);
     }
     return true;
   }
-  // No source containers exist — idle
   return false;
 }
 
