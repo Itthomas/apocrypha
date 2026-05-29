@@ -248,25 +248,32 @@ function doHarvest(creep: Creep): boolean {
 
   // RCL 3+: try container withdrawal first
   if (rcl >= 3) {
-    const sourceContainer = getSourceContainer(creep);
-    if (sourceContainer) {
-      if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-        creep.moveTo(sourceContainer);
+    // Prefer a container that can fully fill the survivor's carry
+    const container = getSourceContainer(creep, creep.store.getFreeCapacity());
+    if (container) {
+      if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(container);
       }
       return true;
     }
 
-    // No container with energy — check if a miner exists
-    const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
-    if (miners.length > 0) {
-      // Miner exists, container will fill — move toward nearest source container
-      // so we're in position when energy arrives
-      const nearest = getNearestSourceContainer(creep);
-      if (nearest) creep.moveTo(nearest);
+    // No container has enough to fill us — fall back to the nearest one
+    const nearest = getNearestSourceContainer(creep);
+    if (nearest) {
+      if (creep.withdraw(nearest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(nearest);
+      }
       return true;
     }
 
-    // No miner and no container energy — fall through to direct harvesting
+    // No source containers at all — check if a miner exists
+    const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+    if (miners.length === 0) {
+      // No miners and no containers — fall through to direct harvesting
+    } else {
+      // Miner exists but no container — wait near spawn for construction
+      return true;
+    }
   }
 
   // Direct source harvesting (RCL 1-2, or RCL 3+ fallback)
@@ -292,8 +299,10 @@ function doHarvest(creep: Creep): boolean {
   return true;
 }
 
-/** Find the nearest source container (adjacent to a source) with ≥ 100 energy */
-function getSourceContainer(creep: Creep): StructureContainer | null {
+/** Find the nearest source container with ≥ minEnergy (default 100).
+ * Pass creep.store.getFreeCapacity() to only target containers that
+ * can fully fill the creep's inventory. */
+function getSourceContainer(creep: Creep, minEnergy: number = 100): StructureContainer | null {
   const sources = creep.room.find(FIND_SOURCES);
   const candidates: StructureContainer[] = [];
 
@@ -301,7 +310,7 @@ function getSourceContainer(creep: Creep): StructureContainer | null {
     const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
       filter: s =>
         s.structureType === STRUCTURE_CONTAINER &&
-        s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
+        s.store.getUsedCapacity(RESOURCE_ENERGY) >= minEnergy
     });
     for (const c of containers) candidates.push(c as StructureContainer);
   }
