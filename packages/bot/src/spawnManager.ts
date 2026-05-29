@@ -54,9 +54,35 @@ function getQuotas(rcl: number): SpawnQuota[] {
   return quotas;
 }
 
+/** Check if required containers are built (source containers + spawn overflow) */
+function containersBuilt(room: Room): boolean {
+  const sources = room.find(FIND_SOURCES);
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length === 0) return false;
+
+  // Check each source has an adjacent container
+  for (const source of sources) {
+    const nearby = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+    if (nearby.length === 0) return false;
+  }
+
+  // Check spawn has an overflow container within 3 tiles
+  const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+    filter: s => s.structureType === STRUCTURE_CONTAINER
+  });
+  if (overflow.length === 0) return false;
+
+  return true;
+}
+
 /** Smart survivor spawn gate for RCL 3+ */
 function survivorGateRcl3(room: Room): boolean {
   const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+
+  // If required containers aren't built yet, survivors stay active to build them
+  if (!containersBuilt(room)) return true;
 
   // If 0 miners at all, definitely spawn survivor
   if (miners.length === 0) return true;
@@ -130,6 +156,9 @@ function upgraderGate(room: Room): boolean {
 
 /** Dispatch to the correct gate function */
 function spawnGate(role: string, room: Room): boolean {
+  // If required containers aren't built, only survivors may spawn
+  if (role !== 'survivor' && !containersBuilt(room)) return false;
+
   switch (role) {
     case 'survivor': return survivorGateRcl3(room);
     case 'builder':  return builderGate(room);
@@ -140,7 +169,7 @@ function spawnGate(role: string, room: Room): boolean {
       });
       return containers.length > 0;
     }
-    default: return true;
+    default: return true; // miner always allowed once containers exist
   }
 }
 
