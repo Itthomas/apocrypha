@@ -150,7 +150,7 @@ function getSourceContainer(creep: Creep): StructureContainer | null {
   const candidates: StructureContainer[] = [];
 
   for (const source of sources) {
-    const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
       filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
     });
     for (const c of containers) candidates.push(c as StructureContainer);
