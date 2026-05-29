@@ -55,25 +55,45 @@ function getNextFillTarget(creep: Creep): AnyStoreStructure | null {
   })[0];
   if (tower) return tower;
 
-  // 4. Spawn overflow container (within 3 tiles of spawn)
+  // 4. Spawn overflow container (within 3 tiles of spawn, below 80%)
   const spawns = room.find(FIND_MY_SPAWNS);
   if (spawns.length > 0) {
     const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+      filter: s => {
+        if (s.structureType !== STRUCTURE_CONTAINER) return false;
+        const store = (s as StructureContainer).store;
+        return store.getFreeCapacity(RESOURCE_ENERGY) > store.getCapacity(RESOURCE_ENERGY) * 0.2;
+      }
     })[0];
     if (overflow) return overflow as AnyStoreStructure;
   }
 
-  // 5. Controller container
+  // 5. Controller container (below 80%)
   const controller = room.controller;
   if (controller) {
     const ct = controller.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+      filter: s => {
+        if (s.structureType !== STRUCTURE_CONTAINER) return false;
+        const store = (s as StructureContainer).store;
+        return store.getFreeCapacity(RESOURCE_ENERGY) > store.getCapacity(RESOURCE_ENERGY) * 0.2;
+      }
     })[0];
     if (ct) return ct as AnyStoreStructure;
   }
 
   return null;
+}
+
+/** Returns true if a fill target is considered satisfied */
+function isTargetSatisfied(target: AnyStoreStructure): boolean {
+  const free = target.store.getFreeCapacity(RESOURCE_ENERGY);
+  if (free <= 0) return true;
+  // Containers are satisfied at 80% — they get drained simultaneously
+  if (target.structureType === STRUCTURE_CONTAINER) {
+    const cap = target.store.getCapacity(RESOURCE_ENERGY);
+    return target.store.getUsedCapacity(RESOURCE_ENERGY) >= cap * 0.8;
+  }
+  return false;
 }
 
 /** Find a source container (adjacent to a source) with ≥100 energy */
@@ -119,9 +139,9 @@ export function run(creep: Creep): boolean {
 
   // FILLING: locked onto a target structure
   if (mem.task === HAULER_TASK.FILLING) {
-    // Validate our target still exists and still needs filling
+    // Validate our target still exists and is still unsatisfied
     const target = mem.targetId ? Game.getObjectById(mem.targetId) as AnyStoreStructure | null : null;
-    if (!target || target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+    if (!target || isTargetSatisfied(target)) {
       // Target is satisfied (filled or gone)
       if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
         // Still have meaningful energy → next target
