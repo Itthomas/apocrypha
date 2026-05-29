@@ -259,8 +259,10 @@ function doHarvest(creep: Creep): boolean {
     // No container with energy — check if a miner exists
     const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
     if (miners.length > 0) {
-      // Miner exists but no container energy yet — wait, don't fall back
-      // (the miner is working, containers will fill soon)
+      // Miner exists, container will fill — move toward nearest source container
+      // so we're in position when energy arrives
+      const nearest = getNearestSourceContainer(creep);
+      if (nearest) creep.moveTo(nearest);
       return true;
     }
 
@@ -300,6 +302,22 @@ function getSourceContainer(creep: Creep): StructureContainer | null {
       filter: s =>
         s.structureType === STRUCTURE_CONTAINER &&
         s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
+    });
+    for (const c of containers) candidates.push(c as StructureContainer);
+  }
+
+  if (candidates.length === 0) return null;
+  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
+}
+
+/** Find the nearest source container regardless of energy level */
+function getNearestSourceContainer(creep: Creep): StructureContainer | null {
+  const sources = creep.room.find(FIND_SOURCES);
+  const candidates: StructureContainer[] = [];
+
+  for (const source of sources) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
     });
     for (const c of containers) candidates.push(c as StructureContainer);
   }

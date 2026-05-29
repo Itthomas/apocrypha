@@ -207,6 +207,17 @@ export function runSpawnManager(room: Room): void {
     // Skip if at max
     if (current >= quota.maximum) continue;
 
+    // RCL 3-4: if we need more miners and a miner body is affordable,
+    // skip survivors entirely — the second miner is critical for supply
+    if (rcl >= 3 && rcl <= 4 && quota.role === 'survivor') {
+      const minerQuota = quotas.find(q => q.role === 'miner');
+      const minerCount = creepCounts['miner'] || 0;
+      if (minerQuota && minerCount < minerQuota.maximum) {
+        const minerBody = getBody('miner', rcl, room.energyAvailable);
+        if (minerBody && minerBody.length > 0) continue;
+      }
+    }
+
     // At RCL 1-2, survivors skip gate check (always allowed)
     // At RCL 3+, gate applies when at or above minimum
     if (rcl >= 3 && current >= quota.minimum) {
