@@ -37,19 +37,23 @@ function getQuotas(rcl: number): SpawnQuota[] {
     ];
   }
 
-  // RCL 3+: specialized roles, survivors as backup
+  // RCL 3-4: miner + survivors. Survivors handle all transport,
+  // building, and upgrading — pulling from miner containers.
+  if (rcl >= 3 && rcl <= 4) {
+    return [
+      { role: 'miner',    minimum: 1, maximum: 2 },
+      { role: 'survivor', minimum: 2, maximum: 4 },
+    ];
+  }
+
+  // RCL 5+: specialized roles, survivors as backup
   const quotas: SpawnQuota[] = [
     { role: 'miner',    minimum: 1, maximum: 2 },
-    { role: 'hauler',   minimum: 1, maximum: 3 },
+    { role: 'hauler',   minimum: 2, maximum: 4 },
     { role: 'survivor', minimum: 0, maximum: 2 },
     { role: 'builder',  minimum: 0, maximum: 2 },
-    { role: 'upgrader', minimum: 0, maximum: 1 },
+    { role: 'upgrader', minimum: 0, maximum: 2 },
   ];
-
-  if (rcl >= 5) {
-    quotas[1] = { role: 'hauler', minimum: 2, maximum: 4 };
-    quotas[4] = { role: 'upgrader', minimum: 0, maximum: 2 };
-  }
 
   return quotas;
 }

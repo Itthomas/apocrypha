@@ -238,7 +238,36 @@ export function run(creep: Creep): boolean {
 
 // ── Harvest ──
 
+/**
+ * At RCL 3+: withdraw from miner containers instead of harvesting
+ * directly from sources. Falls back to direct source harvesting if
+ * no container has energy AND no miner creep exists in the room.
+ */
 function doHarvest(creep: Creep): boolean {
+  const rcl = creep.room.controller?.level ?? 0;
+
+  // RCL 3+: try container withdrawal first
+  if (rcl >= 3) {
+    const sourceContainer = getSourceContainer(creep);
+    if (sourceContainer) {
+      if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(sourceContainer);
+      }
+      return true;
+    }
+
+    // No container with energy — check if a miner exists
+    const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+    if (miners.length > 0) {
+      // Miner exists but no container energy yet — wait, don't fall back
+      // (the miner is working, containers will fill soon)
+      return true;
+    }
+
+    // No miner and no container energy — fall through to direct harvesting
+  }
+
+  // Direct source harvesting (RCL 1-2, or RCL 3+ fallback)
   const sources = creep.room.find(FIND_SOURCES_ACTIVE)
     .filter(s => s.energy > 0)
     .sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));
@@ -259,6 +288,24 @@ function doHarvest(creep: Creep): boolean {
     }
   }
   return true;
+}
+
+/** Find the nearest source container (adjacent to a source) with ≥ 100 energy */
+function getSourceContainer(creep: Creep): StructureContainer | null {
+  const sources = creep.room.find(FIND_SOURCES);
+  const candidates: StructureContainer[] = [];
+
+  for (const source of sources) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+      filter: s =>
+        s.structureType === STRUCTURE_CONTAINER &&
+        s.store.getUsedCapacity(RESOURCE_ENERGY) >= 100
+    });
+    for (const c of containers) candidates.push(c as StructureContainer);
+  }
+
+  if (candidates.length === 0) return null;
+  return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
 }
 
 // ── Deliver ──
