@@ -81,20 +81,23 @@ function screepsCrossModulePlugin(currentName) {
           return undefined; // intra-module, bundle internally
         }
 
-        // Find all matching modules, pick the deepest (most specific) match.
-        // This prevents 'main' (in src/) from shadowing 'telemetry' (in src/telemetry/).
+        // Find all matching modules, pick the best match.
+        // Exact file match wins over directory prefix match.
+        // For directory matches, deepest directory wins.
         let bestMatch = null;
-        let bestDepth = 0;
+        let bestScore = 0; // bits: exact file match (1<<30) | directory depth
         for (const [modName, modEntry] of Object.entries(modules)) {
           if (modName === currentName) continue;
           const modEntryAbs = resolve(SRC, modEntry);
           const modDir = dirname(modEntryAbs);
-          // Match if resolved path equals the module entry file OR its directory
-          if (resolved === modEntryAbs || resolved === modDir || resolved.startsWith(modDir + '/')) {
-            if (modDir.length > bestDepth) {
-              bestDepth = modDir.length;
-              bestMatch = modName;
-            }
+
+          if (resolved === modEntryAbs || resolved + '.ts' === modEntryAbs) {
+            // Exact file match — highest priority
+            const score = (1 << 30) + modDir.length;
+            if (score > bestScore) { bestScore = score; bestMatch = modName; }
+          } else if (resolved === modDir || resolved.startsWith(modDir + '/')) {
+            // Directory prefix match
+            if (modDir.length > bestScore) { bestScore = modDir.length; bestMatch = modName; }
           }
         }
 
