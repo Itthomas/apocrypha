@@ -1,105 +1,97 @@
 /**
  * roles/builder.ts — Construction creep
  *
- * Pulls energy from the spawn overflow container only.
- * Spawns only when container ≥50% full and construction sites exist.
- * Max 2 builders alive at a time.
- * Build priority: extensions > containers > tower > roads > ramparts > walls.
+ * State machine:
+ *   GATHER: withdraw from spawn overflow container until carry is full
+ *   BUILD: build nearest construction site or repair nearest damaged structure
+ *
+ * Never harvests from sources — only pulls from the overflow container.
+ * Builds nearest construction site. Repairs structures below 50% hp (no walls/ramparts).
+ * Switches between GATHER and BUILD as carry empties/fills.
  */
+
+enum BUILDER_TASK {
+  GATHER = 0,
+  BUILD = 1,
+}
 
 interface BuilderMemory {
   role: 'builder';
-  building: boolean;
-  targetId?: Id<ConstructionSite | Structure>;
-}
-
-/** Build priority order by structure type (lower = build first) */
-const BUILD_PRIORITY: Record<string, number> = {
-  [STRUCTURE_EXTENSION]: 1,
-  [STRUCTURE_CONTAINER]: 2,
-  [STRUCTURE_TOWER]:    3,
-  [STRUCTURE_STORAGE]:  4,
-  [STRUCTURE_ROAD]:     5,
-  [STRUCTURE_RAMPART]:  6,
-  [STRUCTURE_WALL]:     7,
-};
-
-/** Get the spawn overflow container */
-function getOverflowContainer(room: Room): StructureContainer | null {
-  const spawns = room.find(FIND_MY_SPAWNS);
-  if (spawns.length === 0) return null;
-  return spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-    filter: s => s.structureType === STRUCTURE_CONTAINER
-  })[0] as StructureContainer | null;
+  task: BUILDER_TASK;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as BuilderMemory;
+  if (mem.task === undefined) mem.task = BUILDER_TASK.GATHER;
 
-  if (creep.store.getFreeCapacity() === 0) mem.building = true;
-  if (creep.store.getUsedCapacity() === 0) {
-    mem.building = false;
-    mem.targetId = undefined;
+  // Carry empty → GATHER
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0 && mem.task !== BUILDER_TASK.GATHER) {
+    mem.task = BUILDER_TASK.GATHER;
+  }
+  // Carry full → BUILD
+  if (creep.store.getFreeCapacity() === 0 && mem.task !== BUILDER_TASK.BUILD) {
+    mem.task = BUILDER_TASK.BUILD;
   }
 
-  // BUILD
-  if (mem.building) {
-    let target: ConstructionSite | Structure | null = null;
+  if (mem.task === BUILDER_TASK.GATHER) {
+    return doGather(creep);
+  }
+  return doBuildOrRepair(creep);
+}
 
-    if (mem.targetId) {
-      target = Game.getObjectById(mem.targetId);
+// ── GATHER: withdraw from spawn overflow container ──
+
+function doGather(creep: Creep): boolean {
+  if (creep.store.getFreeCapacity() === 0) {
+    (creep.memory as BuilderMemory).task = BUILDER_TASK.BUILD;
+    return doBuildOrRepair(creep);
+  }
+
+  // Find spawn overflow container
+  const spawns = creep.room.find(FIND_MY_SPAWNS);
+  if (spawns.length > 0) {
+    const container = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    })[0];
+    if (container) {
+      if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(container);
+      return true;
     }
+  }
 
-    if (!target) {
-      const allSites = creep.room.find(FIND_CONSTRUCTION_SITES);
-      // Sort by build priority
-      allSites.sort((a, b) =>
-        (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99)
-      );
-      target = allSites.length > 0 ? allSites[0] : null;
-    }
+  // No overflow container — idle near spawn
+  return false;
+}
 
-    if (!target) {
-      // No construction sites — repair damaged structures (priority order)
-      const damaged = creep.room.find(FIND_STRUCTURES, {
-        filter: s => s.hits < s.hitsMax * 0.5 && s.structureType !== STRUCTURE_WALL
-      });
-      damaged.sort((a, b) =>
-        (BUILD_PRIORITY[a.structureType] || 99) - (BUILD_PRIORITY[b.structureType] || 99)
-      );
-      target = damaged.length > 0 ? damaged[0] : null;
-    }
+// ── BUILD: build nearest site or repair nearest damaged structure ──
 
-    if (!target) return false; // Nothing to do
+function doBuildOrRepair(creep: Creep): boolean {
+  if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+    (creep.memory as BuilderMemory).task = BUILDER_TASK.GATHER;
+    return doGather(creep);
+  }
 
-    mem.targetId = target.id;
-
-    let result: ScreepsReturnCode;
-    if (target instanceof ConstructionSite) {
-      result = creep.build(target);
-    } else {
-      result = creep.repair(target);
-    }
-
-    if (result === ERR_NOT_IN_RANGE) {
-      creep.moveTo(target);
-    } else if (result === OK) {
-      if ((target instanceof ConstructionSite && !Game.getObjectById(target.id)) ||
-          (target instanceof Structure && target.hits >= target.hitsMax)) {
-        mem.targetId = undefined;
-      }
-    }
+  // 1. Repair nearest damaged structure below 50% (exclude walls/ramparts)
+  const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+    filter: s =>
+      s.hits < s.hitsMax * 0.5 &&
+      s.structureType !== STRUCTURE_WALL &&
+      s.structureType !== STRUCTURE_RAMPART
+  });
+  if (damaged) {
+    const result = creep.repair(damaged);
+    if (result === ERR_NOT_IN_RANGE) creep.moveTo(damaged);
     return true;
   }
 
-  // WITHDRAW from spawn overflow container only
-  const container = getOverflowContainer(creep.room);
-  if (container && container.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-    if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-      creep.moveTo(container);
-    }
+  // 2. Build nearest construction site
+  const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+  if (site) {
+    const result = creep.build(site);
+    if (result === ERR_NOT_IN_RANGE) creep.moveTo(site);
     return true;
   }
 
+  // Nothing to build or repair — go idle (don't switch to harvest)
   return false;
 }
