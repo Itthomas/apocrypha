@@ -74,12 +74,6 @@ function containersBuilt(room: Room): boolean {
     if (nearby.length === 0) return false;
   }
 
-  // Check spawn has an overflow container within 3 tiles
-  const overflow = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
-    filter: s => s.structureType === STRUCTURE_CONTAINER
-  });
-  if (overflow.length === 0) return false;
-
   return true;
 }
 
