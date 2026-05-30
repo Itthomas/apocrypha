@@ -52,7 +52,7 @@ function getQuotas(rcl: number): SpawnQuota[] {
   const quotas: SpawnQuota[] = [
     { role: 'miner',    minimum: 0, maximum: 0 },
     { role: 'hauler',   minimum: 0, maximum: 0 },
-    { role: 'survivor', minimum: 3, maximum: 8 },
+    { role: 'survivor', minimum: 0, maximum: 8 },
     { role: 'builder',  minimum: 0, maximum: 2 },
     { role: 'upgrader', minimum: 0, maximum: 2 },
   ];
