@@ -50,7 +50,7 @@ function getQuotas(rcl: number): SpawnQuota[] {
   const quotas: SpawnQuota[] = [
     { role: 'miner',    minimum: 1, maximum: 2 },
     { role: 'hauler',   minimum: 2, maximum: 4 },
-    { role: 'survivor', minimum: 0, maximum: 2 },
+    { role: 'survivor', minimum: 3, maximum: 8 },
     { role: 'builder',  minimum: 0, maximum: 2 },
     { role: 'upgrader', minimum: 0, maximum: 2 },
   ];
@@ -209,6 +209,34 @@ function survivorGateRcl3(room: Room): boolean {
   return energyAvail < 100; // Critical threshold
 }
 
+/**
+ * RCL 5+ survivor gate: spawn limits based on storage energy instead of
+ * the economy soft-cap.  Survivors are the generalist workforce at all
+ * RCLs now — storage level determines how many we can sustain.
+ *
+ *   storage < 100k   → max 3
+ *   storage 100-200k  → max 5
+ *   storage > 200k    → max 8
+ */
+function survivorGateRcl5(room: Room): boolean {
+  const survivorCount = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'survivor').length;
+
+  // Storage-based cap
+  const storageEnergy = room.storage?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
+  let maxSurvivors = 3;
+  if (storageEnergy >= 200_000) maxSurvivors = 8;
+  else if (storageEnergy >= 100_000) maxSurvivors = 5;
+
+  if (survivorCount >= maxSurvivors) return false;
+
+  // Safety checks (same as RCL 3-4)
+  if (!containersBuilt(room)) return true;
+  const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+  if (miners.length === 0) return true;
+
+  return true;
+}
+
 /** Build gate: overflow container must be ≥50% full */
 function builderGate(room: Room): boolean {
   const sites = room.find(FIND_CONSTRUCTION_SITES);
@@ -247,7 +275,10 @@ function spawnGate(role: string, room: Room): boolean {
   if (role !== 'survivor' && role !== 'miner' && !containersBuilt(room)) return false;
 
   switch (role) {
-    case 'survivor': return survivorGateRcl3(room);
+    case 'survivor': {
+      const rcl = room.controller?.level ?? 0;
+      return rcl >= 5 ? survivorGateRcl5(room) : survivorGateRcl3(room);
+    }
     case 'builder':  return builderGate(room);
     case 'upgrader': return upgraderGate(room);
     case 'hauler': {
