@@ -26,11 +26,7 @@ interface BodyTier {
 /** Body tier definitions per role */
 const BODY_TIERS: Record<string, BodyTier[]> = {
   miner: [
-    { minRcl: 1, primary: { work: 2, carry: 1, move: 1 }, fallback: { work: 1, carry: 1, move: 1 } },
-    { minRcl: 2, primary: { work: 3, carry: 1, move: 1 }, fallback: { work: 2, carry: 1, move: 1 } },
-    { minRcl: 3, primary: { work: 6, carry: 1, move: 1 }, fallback: { work: 4, carry: 1, move: 1 } },
-    { minRcl: 5, primary: { work: 7, carry: 1, move: 2 }, fallback: { work: 6, carry: 1, move: 1 } },
-    { minRcl: 7, primary: { work: 10, carry: 1, move: 2 }, fallback: { work: 7, carry: 1, move: 2 } },
+    { minRcl: 1, primary: { work: 6, carry: 1, move: 3 }, fallback: { work: 6, carry: 1, move: 1 } },
   ],
   hauler: [
     { minRcl: 2, primary: { work: 0, carry: 4, move: 1 }, fallback: { work: 0, carry: 2, move: 1 } },
