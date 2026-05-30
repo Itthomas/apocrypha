@@ -219,9 +219,10 @@ function survivorGateRcl5(room: Room): boolean {
 
   // Storage-based cap
   const storageEnergy = room.storage?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
-  let maxSurvivors = 3;
+  let maxSurvivors = 1;
   if (storageEnergy >= 200_000) maxSurvivors = 8;
   else if (storageEnergy >= 100_000) maxSurvivors = 5;
+  else if (storageEnergy >= 50_000) maxSurvivors = 3;
 
   if (survivorCount >= maxSurvivors) return false;
 
