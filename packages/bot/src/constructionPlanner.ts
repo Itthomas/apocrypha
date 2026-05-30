@@ -247,8 +247,8 @@ function getBatches(rcl: number): BatchDef[] {
   const bp = BLUEPRINT[rcl];
   const batches: BatchDef[] = [];
 
-  // RCL 1: roads first — creeps need paths from the start
-  if (rcl >= 1) {
+  // RCL 1: nothing — let the room stabilize first
+  if (rcl >= 2) {
     batches.push({ label: 'roads_src_ctrl', kind: 'dynamic', place: placeRoadsToSourcesAndController });
   }
 
