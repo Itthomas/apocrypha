@@ -158,15 +158,23 @@ export function run(creep: Creep): boolean {
   // Loot override: pick up nearby dropped energy/tombstones if below 80% carry.
   // Does not change current task — just diverts one tick at a time.
   if (creep.store.getUsedCapacity() < creep.store.getCapacity() * 0.8) {
-    const loot = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+    const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
       filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
-    }) || creep.pos.findClosestByRange(FIND_TOMBSTONES, {
+    });
+    const tombstone = creep.pos.findClosestByRange(FIND_TOMBSTONES, {
       filter: t => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
     });
-    if (loot && creep.pos.getRangeTo(loot) <= 8) {
-      if (creep.pickup(loot) === ERR_NOT_IN_RANGE) {
-        creep.moveTo(loot);
-      }
+
+    // Prefer the closer of the two
+    const distDropped = dropped ? creep.pos.getRangeTo(dropped) : Infinity;
+    const distTomb = tombstone ? creep.pos.getRangeTo(tombstone) : Infinity;
+
+    if (distDropped <= 8 && distDropped <= distTomb) {
+      if (creep.pickup(dropped!) === ERR_NOT_IN_RANGE) creep.moveTo(dropped!);
+      return true;
+    }
+    if (distTomb <= 8) {
+      if (creep.withdraw(tombstone!, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(tombstone!);
       return true;
     }
   }
