@@ -167,8 +167,9 @@ export function run(creep: Creep): boolean {
       }
     }
     // Carry is empty, or no other tasks available — keep harvesting
-    // If we have some energy and spawn is critically empty, deliver now
-    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50) {
+    // At RCL 3+, if we have some energy and spawn is critically empty, deliver now.
+    // At RCL 1-2, always fill carry completely before delivering — the spawn can wait.
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= 50 && (creep.room.controller?.level ?? 0) >= 3) {
       const spawns = creep.room.find(FIND_MY_SPAWNS);
       if (spawns.some(s => s.store.getUsedCapacity(RESOURCE_ENERGY) < 100)) {
         setTask(creep, TASK.DELIVER);
