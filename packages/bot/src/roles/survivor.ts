@@ -155,6 +155,22 @@ export function run(creep: Creep): boolean {
   const mem = creep.memory as SurvivorMemory;
   if (mem.task === undefined) mem.task = TASK.HARVEST;
 
+  // Loot override: pick up nearby dropped energy/tombstones if below 80% carry.
+  // Does not change current task — just diverts one tick at a time.
+  if (creep.store.getUsedCapacity() < creep.store.getCapacity() * 0.8) {
+    const loot = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+      filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+    }) || creep.pos.findClosestByRange(FIND_TOMBSTONES, {
+      filter: t => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+    });
+    if (loot && creep.pos.getRangeTo(loot) <= 8) {
+      if (creep.pickup(loot) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(loot);
+      }
+      return true;
+    }
+  }
+
   // HARVEST: keep harvesting until carry is FULL
   if (mem.task === TASK.HARVEST) {
     // If carry is full, switch to next priority task

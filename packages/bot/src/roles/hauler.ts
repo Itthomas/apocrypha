@@ -33,6 +33,21 @@ export function run(creep: Creep): boolean {
     mem.task = HAULER_TASK.GATHER;
   }
 
+  // Loot override: pick up nearby dropped energy/tombstones if below 80% carry.
+  if (creep.store.getUsedCapacity() < creep.store.getCapacity() * 0.8) {
+    const loot = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+      filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+    }) || creep.pos.findClosestByRange(FIND_TOMBSTONES, {
+      filter: t => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+    });
+    if (loot && creep.pos.getRangeTo(loot) <= 8) {
+      if (creep.pickup(loot) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(loot);
+      }
+      return true;
+    }
+  }
+
   if (mem.task === HAULER_TASK.GATHER) {
     return doGather(creep);
   }
