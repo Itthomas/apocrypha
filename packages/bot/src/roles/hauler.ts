@@ -70,16 +70,57 @@ function getSourceContainer(creep: Creep, minEnergy: number): StructureContainer
   return creep.pos.findClosestByPath(candidates) as StructureContainer | null;
 }
 
+/** True when there are delivery targets that need energy */
+function deliveryDemandExists(creep: Creep): boolean {
+  // Spawn or extension with free capacity
+  const spawnOrExt = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+    filter: s =>
+      (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+      s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+  });
+  if (spawnOrExt) return true;
+
+  // Tower below 80%
+  const tower = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+    filter: s =>
+      s.structureType === STRUCTURE_TOWER &&
+      s.store.getUsedCapacity(RESOURCE_ENERGY) < s.store.getCapacity(RESOURCE_ENERGY) * 0.8
+  });
+  return tower !== null;
+}
+
 function doGather(creep: Creep): boolean {
-  // Prefer a container that can fully fill us
-  const container = getSourceContainer(creep, creep.store.getFreeCapacity())
-    || getNearestSourceContainer(creep);
-  if (container) {
-    if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-      creep.moveTo(container);
+  const freeCapacity = creep.store.getFreeCapacity();
+
+  // 1. Prefer a source container that can fully fill us
+  const fullContainer = getSourceContainer(creep, freeCapacity);
+  if (fullContainer) {
+    if (creep.withdraw(fullContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(fullContainer);
     }
     return true;
   }
+
+  // 2. No container can fill us, but there's delivery demand — pull from storage
+  if (deliveryDemandExists(creep)) {
+    const storage = creep.room.storage;
+    if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) >= freeCapacity) {
+      if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        creep.moveTo(storage);
+      }
+      return true;
+    }
+  }
+
+  // 3. Fall back to the nearest source container, regardless of energy level
+  const nearest = getNearestSourceContainer(creep);
+  if (nearest) {
+    if (creep.withdraw(nearest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+      creep.moveTo(nearest);
+    }
+    return true;
+  }
+
   return false;
 }
 
