@@ -79,7 +79,7 @@ function doBuildOrRepair(creep: Creep): boolean {
   //    Ramparts use the RCL-gated artificial threshold (e.g. 20k at RCL 5)
   //    instead of their actual max health. Walls are ignored entirely.
   const rcl = creep.room.controller?.level ?? 0;
-  const rampartThreshold = getRampartRepairThreshold(rcl);
+  const rampartThreshold = getRampartRepairThreshold(rcl, creep.room);
   const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
     filter: s => {
       if (s.structureType === STRUCTURE_WALL) return false;

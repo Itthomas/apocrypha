@@ -111,7 +111,7 @@ function chooseTask(creep: Creep): TASK {
   // Ramparts use the RCL-gated artificial threshold instead of actual max health.
   if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
     const rcl = creep.room.controller?.level ?? 0;
-    const rampartThreshold = getRampartRepairThreshold(rcl);
+    const rampartThreshold = getRampartRepairThreshold(rcl, creep.room);
     const damaged = creep.room.find(FIND_STRUCTURES, {
       filter: s => {
         if (s.structureType === STRUCTURE_WALL) return false;
@@ -191,7 +191,7 @@ export function run(creep: Creep): boolean {
   // REPAIR: repair nearest damaged structure until full or out of energy
   if (mem.task === TASK.REPAIR) {
     const rcl = creep.room.controller?.level ?? 0;
-    const rampartThreshold = getRampartRepairThreshold(rcl);
+    const rampartThreshold = getRampartRepairThreshold(rcl, creep.room);
 
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       setTask(creep, TASK.HARVEST);

@@ -6,6 +6,10 @@
  * 500-on/500-off duty cycle (Game.time % 1000 < 500). Ramparts use RCL-gated
  * artificial health thresholds instead of their astronomical actual max health.
  *
+ * Rampart thresholds only advance to the current RCL's value once all
+ * non-road construction for that RCL is complete.  Roads are excluded
+ * because the autorouter continuously places them.
+ *
  * Towers lock onto a repair target until it's fully repaired (or reaches
  * the rampart threshold) or the tower runs out of energy.
  */
@@ -20,14 +24,35 @@ export const RAMPART_THRESHOLDS: Record<number, number> = {
   2: 0,
   3: 0,
   4: 0,
-  5: 20_000,
-  6: 100_000,
-  7: 500_000,
-  8: 1_000_000,
+  5: 100_000,
+  6: 500_000,
+  7: 2_000_000,
+  8: 10_000_000,
 };
 
-/** Get the effective rampart repair health cap for the current RCL */
-export function getRampartRepairThreshold(rcl: number): number {
+/**
+ * Returns true when all non-road construction for the room is complete.
+ * Roads are excluded because the autorouter places them continuously.
+ */
+function isRoomConstructionComplete(room: Room): boolean {
+  return room.find(FIND_CONSTRUCTION_SITES).every(
+    s => s.structureType === STRUCTURE_ROAD
+  );
+}
+
+/**
+ * Get the effective rampart repair health cap.
+ *
+ * The threshold advances to the current RCL's value only once all
+ * non-road construction is complete.  While construction is still
+ * in progress we use the previous RCL's threshold so ramparts stay
+ * at their prior cap until the room is fully built.
+ */
+export function getRampartRepairThreshold(rcl: number, room?: Room): number {
+  if (room && !isRoomConstructionComplete(room)) {
+    // Construction still in progress — use previous RCL's threshold
+    return RAMPART_THRESHOLDS[rcl - 1] ?? 0;
+  }
   return RAMPART_THRESHOLDS[rcl] ?? 0;
 }
 
@@ -66,7 +91,7 @@ export function runTowers(room: Room): void {
   if (Game.time % 1000 >= 500) return;
 
   const rcl = room.controller?.level ?? 0;
-  const rampartThreshold = getRampartRepairThreshold(rcl);
+  const rampartThreshold = getRampartRepairThreshold(rcl, room);
 
   if (!Memory.towerTargets) Memory.towerTargets = {};
 
