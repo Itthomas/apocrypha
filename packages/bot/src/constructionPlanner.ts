@@ -259,10 +259,9 @@ function getBatches(rcl: number): BatchDef[] {
     batches.push({ label: 'source_containers', kind: 'dynamic', place: placeSourceContainers });
   }
 
-  // RCL 3: extensions batch 2, tower 1, controller container
+  // RCL 3: extensions batch 2, tower 1
   if (rcl >= 3 && bp) {
     if (bp[1]?.length) batches.push({ label: 'ext_2', kind: 'static', entries: bp[1] });
-    batches.push({ label: 'ctrl_container', kind: 'dynamic', place: placeControllerContainer });
     if (bp[2]?.length) batches.push({ label: 'tower_1', kind: 'static', entries: bp[2] });
   }
 
@@ -272,11 +271,9 @@ function getBatches(rcl: number): BatchDef[] {
     if (bp[2]?.length) batches.push({ label: 'storage', kind: 'static', entries: bp[2] });
   }
 
-  // RCL 5: extensions batch 4, source links, tower 2, outer ramparts
+  // RCL 5: extensions batch 4, tower 2, outer ramparts
   if (rcl >= 5 && bp) {
     if (bp[1]?.length) batches.push({ label: 'ext_4', kind: 'static', entries: bp[1] });
-    batches.push({ label: 'source_links', kind: 'dynamic', place: placeSourceLinks });
-    batches.push({ label: 'ctrl_link', kind: 'dynamic', place: placeControllerLink });
     if (bp[2]?.length) batches.push({ label: 'tower_2', kind: 'static', entries: bp[2] });
     if (bp[3]?.length) batches.push({ label: 'outer_ramparts', kind: 'static', entries: bp[3] });
   }
