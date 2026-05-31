@@ -14,8 +14,10 @@ var roleHauler = require('role.hauler');
 var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
 var roleSurvivor = require('role.survivor');
+var roleScout = require('role.scout');
 var mantra = require('mantra');
 var tower = require('tower');
+var colonization = require('colonization');
 
 // Map role names to module run functions
 var roleModules: Record<string, any> | null = null;
@@ -28,6 +30,7 @@ function getRoleModule(role: string) {
       'builder': roleBuilder,
       'upgrader': roleUpgrader,
       'survivor': roleSurvivor,
+      'scout': roleScout,
     };
   }
   return roleModules[role] || null;
@@ -104,6 +107,9 @@ export function loop(): void {
 
   // --- Log cleanup (every 10k ticks) ---
   telemetry.cleanCreepLog();
+
+  // --- Colonization ---
+  colonization.runColonization();
 
   // --- Mantra ---
   mantra.run();

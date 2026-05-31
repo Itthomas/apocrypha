@@ -288,6 +288,52 @@ function spawnGate(role: string, room: Room): boolean {
   }
 }
 
+// ── Colonization scout spawning ──
+
+const SCOUT_BEARINGS = [0, 1, 2, 3, 4, 5, 6, 7];
+const SCOUT_MAX_RESPAWNS = 5;
+
+function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
+  const col = Memory.colonization;
+  if (!col?.active || Game.time >= col.deadline) return false;
+  if ((room.controller?.level ?? 0) < 5) return false;
+
+  for (const bearing of SCOUT_BEARINGS) {
+    const key = `${room.name}_${bearing}`;
+    const state = col.scoutState[key];
+    const respawns = state?.respawns ?? 0;
+
+    // Already spawned and alive? Skip
+    const alive = room.find(FIND_MY_CREEPS).some(
+      c => c.memory.role === 'scout' && (c.memory as any).bearing === bearing
+    );
+    if (alive) continue;
+
+    // Respawning: must be within budget
+    if (respawns >= SCOUT_MAX_RESPAWNS) continue;
+
+    const result = spawn.spawnCreep([MOVE], `scout_${Game.time}`, {
+      memory: {
+        role: 'scout',
+        bearing,
+        temperature: 0.1 * respawns,
+        prevRoom: '',
+        respawns: respawns + 1,
+        sourceRoom: room.name,
+      }
+    });
+
+    if (result === OK) {
+      col.scoutState[key] = { bearing, respawns: respawns + 1 };
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// ── Spawn Manager ──
+
 /** Run spawn logic for one room. Call once per tick. */
 export function runSpawnManager(room: Room): void {
   // Update economy tracker (container energy moving average + soft cap)
@@ -305,6 +351,9 @@ export function runSpawnManager(room: Room): void {
     const role = c.memory.role ?? 'unknown';
     creepCounts[role] = (creepCounts[role] || 0) + 1;
   }
+
+  // ── Colonization scouts (spawn before regular roles) ──
+  if (trySpawnScout(room, spawns[0])) return;
 
   // Try each role in priority order
   const sourceCount = room.find(FIND_SOURCES).length;

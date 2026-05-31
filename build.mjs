@@ -34,6 +34,9 @@ const modules = {
   'telemetry':            'telemetry/index.ts',
   'mantra':               'mantra.ts',
   'tower':                'tower.ts',
+  'colonization':         'colonization.ts',
+  'role.scout':           'roles/scout.ts',
+  'colonization.scoring': 'colonization/scoring.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)
