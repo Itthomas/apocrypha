@@ -33,6 +33,7 @@ const modules = {
   'constructionPlanner':  'constructionPlanner.ts',
   'telemetry':            'telemetry/index.ts',
   'mantra':               'mantra.ts',
+  'blueprint':            'blueprint.ts',
   'tower':                'tower.ts',
   'colonization':         'colonization.ts',
   'role.scout':           'roles/scout.ts',
