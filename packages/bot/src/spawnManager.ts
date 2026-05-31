@@ -303,28 +303,29 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
     const state = col.scoutState[key];
     const respawns = state?.respawns ?? 0;
 
-    // Already spawned and alive? Skip
-    const alive = room.find(FIND_MY_CREEPS).some(
-      c => c.memory.role === 'scout' && (c.memory as any).bearing === bearing
-    );
-    if (alive) continue;
+    // Already alive? Check Game.creeps globally — scout may be in neighbor room
+    const name = state?.name;
+    if (name && Game.creeps[name]) continue;
 
     // Respawning: must be within budget
     if (respawns >= SCOUT_MAX_RESPAWNS) continue;
 
-    const result = spawn.spawnCreep([MOVE], `scout_${Game.time}`, {
+    const scoutName = `scout_${room.name}_${bearing}_${Game.time}`;
+    const result = spawn.spawnCreep([MOVE], scoutName, {
       memory: {
         role: 'scout',
         bearing,
         temperature: 0.1 * respawns,
         prevRoom: '',
+        chosenExit: 0,
+        lastRoom: '',
         respawns: respawns + 1,
         sourceRoom: room.name,
       }
     });
 
     if (result === OK) {
-      col.scoutState[key] = { bearing, respawns: respawns + 1 };
+      col.scoutState[key] = { bearing, respawns: respawns + 1, name: scoutName };
       return true;
     }
   }

@@ -5,8 +5,8 @@
  * direction, scoring new rooms for colonization candidacy.
  *
  * Maze routing: bearing-priority exit selection with single prevRoom
- * backtrack fallback. No trail needed — prevRoom alone prevents the
- * ping-pong loop while allowing dead-end escape.
+ * backtrack fallback. Exit chosen once per room and persisted — no
+ * oscillation from per-tick re-evaluation.
  */
 
 import { scoreRoom } from '../colonization/scoring';
@@ -16,6 +16,8 @@ interface ScoutMemory {
   bearing: number;      // 0..7 in 45° steps (N, NE, E, SE, S, SW, W, NW)
   temperature: number;  // 0..1 randomness offset
   prevRoom: string;     // room entered FROM
+  chosenExit: number;   // chosen exit direction (1/3/5/7), persisted per room
+  lastRoom: string;     // room where chosenExit was selected
   respawns: number;
   sourceRoom: string;
 }
@@ -69,55 +71,66 @@ export function run(creep: Creep): boolean {
     }
   }
 
-  // ── Get exits ──
-  const exitsRaw = Game.map.describeExits(roomName);
-  if (!exitsRaw) return false;
+  // ── Choose exit (once per room) ──
+  if (mem.lastRoom !== roomName) {
+    mem.lastRoom = roomName;
+    mem.chosenExit = pickExit(creep, mem);
+  }
 
-  // describeExits returns { "1": "W7N4", "3": "W8N4", ... }
-  // Keys are direction constants as strings (1=TOP, 3=RIGHT, 5=BOTTOM, 7=LEFT)
-  const exitEntries: Array<{ name: string; deg: number; find: ExitConstant }> = [];
+  // ── Move toward chosen exit ──
+  const findConst = EXIT_TO_FIND[mem.chosenExit as ExitDirConst];
+  if (findConst) {
+    const tiles = creep.room.find(findConst);
+    if (tiles.length > 0) {
+      creep.moveTo(tiles[0], { reusePath: 10, maxRooms: 1 });
+    }
+  }
+
+  // Record prevRoom for when boundary is crossed
+  mem.prevRoom = roomName;
+
+  return true;
+}
+
+// ── Exit selection ──
+
+function pickExit(creep: Creep, mem: ScoutMemory): number {
+  const exitsRaw = Game.map.describeExits(creep.room.name);
+  if (!exitsRaw) return 1; // fallback TOP
+
+  const exitEntries: Array<{ name: string; deg: number; dirConst: ExitDirConst }> = [];
   for (const dirStr in exitsRaw) {
     const dir = parseInt(dirStr) as ExitDirConst;
     if (!(dir in EXIT_TO_DEG)) continue;
     exitEntries.push({
       name: exitsRaw[dirStr],
       deg: EXIT_TO_DEG[dir],
-      find: EXIT_TO_FIND[dir],
+      dirConst: dir,
     });
   }
 
-  if (exitEntries.length === 0) return false;
+  if (exitEntries.length === 0) return 1;
 
-  // ── Filter: exclude prevRoom (unless it's the only exit) ──
+  // Filter: exclude prevRoom (unless it's the only exit)
   let forward = exitEntries.filter(e => e.name !== mem.prevRoom);
   if (forward.length === 0) forward = exitEntries;
 
-  // ── Score exits by bearing closeness + temperature ──
+  // Score by bearing closeness + temperature (once — no Math.random per tick)
   const bearingDeg = BEARING_DEG[mem.bearing] ?? 0;
-  let bestExit = forward[0];
+  let best = forward[0];
   let bestScore = -Infinity;
 
   for (const exit of forward) {
-    // Angular distance — dip around the circle (720° arc)
     let angleDiff = Math.abs(bearingDeg - exit.deg);
     if (angleDiff > 180) angleDiff = 360 - angleDiff;
     const base = 180 - angleDiff;
-    const tempJitter = (mem.temperature ?? 0) * 180 * Math.random();
-    const score = base + tempJitter;
+    // Temperature drives divergence across respawns, not per-tick jitter
+    const score = base + (mem.temperature ?? 0) * 90;
     if (score > bestScore) {
       bestScore = score;
-      bestExit = exit;
+      best = exit;
     }
   }
 
-  // ── Move toward chosen exit ──
-  const tiles = creep.room.find(bestExit.find);
-  if (tiles.length > 0) {
-    creep.moveTo(tiles[0], { reusePath: 10, maxRooms: 1 });
-  }
-
-  // Record prevRoom for next tick (when boundary is crossed)
-  mem.prevRoom = roomName;
-
-  return true;
+  return best.dirConst;
 }
