@@ -319,7 +319,6 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
         prevRoom: '',
         chosenExit: 0,
         lastRoom: '',
-        trail: [],
         respawns: respawns + 1,
         sourceRoom: room.name,
       }

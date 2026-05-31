@@ -4,10 +4,12 @@
  * 1-MOVE disposable creep that explores the world in a cardinal bearing
  * direction, scoring new rooms for colonization candidacy.
  *
- * Maze routing: bearing-priority exit selection with short trail to
- * prevent ping-pong re-entry loops.  prevRoom is the last-resort
- * backtrack when every exit leads to a recently-visited room.
- * Exit chosen once per room and persisted.
+ * Maze routing: bearing-priority exit selection with single prevRoom
+ * backtrack fallback. Exit chosen once per room and persisted — no
+ * oscillation from per-tick re-evaluation.
+ *
+ * Edge override: scouts on room boundaries (x/y 0 or 49) pathfind to
+ * room center instead of struggling with edge exit tiles.
  */
 
 import { scoreRoom } from '../colonization/scoring';
@@ -19,12 +21,9 @@ interface ScoutMemory {
   prevRoom: string;     // room entered FROM
   chosenExit: number;   // chosen exit direction (1/3/5/7), persisted per room
   lastRoom: string;     // room where chosenExit was selected
-  trail: string[];      // last 3 room names visited (loop prevention)
   respawns: number;
   sourceRoom: string;
 }
-
-const TRAIL_SIZE = 3;
 
 // Bearing → cardinal direction degrees (diagonals handled by scoring)
 const BEARING_DEG: Record<number, number> = {
@@ -64,13 +63,6 @@ export function run(creep: Creep): boolean {
   }
 
   const roomName = creep.room.name;
-
-  // ── Maintain trail (last N rooms, prevents immediate re-entry) ──
-  if (!mem.trail) mem.trail = [];
-  if (mem.trail[mem.trail.length - 1] !== roomName) {
-    mem.trail.push(roomName);
-    if (mem.trail.length > TRAIL_SIZE) mem.trail.shift();
-  }
 
   // ── New room → score it ──
   if (col.roomsVisited.indexOf(roomName) === -1) {
@@ -129,21 +121,9 @@ function pickExit(creep: Creep, mem: ScoutMemory): number {
 
   if (exitEntries.length === 0) return 1;
 
-  // Filter: exclude trail rooms (prevents ping-pong loops)
-  // prevRoom is kept as last-resort fallback
-  const trail = mem.trail ?? [];
-  const nonPrevBacktrack = exitEntries.filter(
-    e => e.name !== mem.prevRoom && trail.indexOf(e.name) === -1
-  );
-
-  let forward: typeof exitEntries;
-  if (nonPrevBacktrack.length > 0) {
-    forward = nonPrevBacktrack; // prefer non-prevRoom, non-trail exits
-  } else {
-    // All exits are in trail. Try without trail filter (only exclude prevRoom).
-    const notPrevRoom = exitEntries.filter(e => e.name !== mem.prevRoom);
-    forward = notPrevRoom.length > 0 ? notPrevRoom : exitEntries;
-  }
+  // Filter: exclude prevRoom (unless it's the only exit)
+  let forward = exitEntries.filter(e => e.name !== mem.prevRoom);
+  if (forward.length === 0) forward = exitEntries;
 
   // Score by bearing closeness + temperature (once — no Math.random per tick)
   const bearingDeg = BEARING_DEG[mem.bearing] ?? 0;
