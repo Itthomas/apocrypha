@@ -13,31 +13,34 @@ import { scoreRoom } from '../colonization/scoring';
 
 interface ScoutMemory {
   role: 'scout';
-  bearing: number;      // 0..315 in 45° steps
+  bearing: number;      // 0..7 in 45° steps (N, NE, E, SE, S, SW, W, NW)
   temperature: number;  // 0..1 randomness offset
   prevRoom: string;     // room entered FROM
   respawns: number;
   sourceRoom: string;
 }
 
+// Bearing → cardinal direction degrees (diagonals handled by scoring)
 const BEARING_DEG: Record<number, number> = {
   0: 0,   1: 45,  2: 90,  3: 135,
   4: 180, 5: 225, 6: 270, 7: 315,
 };
 
-const DEG_TO_EXIT_FIND: Record<number, ExitConstant> = {
-  0:   FIND_EXIT_TOP,
-  45:  FIND_EXIT_TOP_RIGHT,
-  90:  FIND_EXIT_RIGHT,
-  135: FIND_EXIT_BOTTOM_RIGHT,
-  180: FIND_EXIT_BOTTOM,
-  225: FIND_EXIT_BOTTOM_LEFT,
-  270: FIND_EXIT_LEFT,
-  315: FIND_EXIT_TOP_LEFT,
+// Only 4 cardinal exit constants exist in Screeps
+type ExitDirConst = 1 | 3 | 5 | 7;
+
+const EXIT_TO_DEG: Record<ExitDirConst, number> = {
+  1: 0,    // TOP    → N
+  3: 90,   // RIGHT  → E
+  5: 180,  // BOTTOM → S
+  7: 270,  // LEFT   → W
 };
 
-const EXIT_DIR_TO_DEG: Record<string, number> = {
-  '1': 0,    '3': 45,   '5': 90,   '7': 135,    // TOP=1, TOP_RIGHT=3, RIGHT=5, BOTTOM_RIGHT=7
+const EXIT_TO_FIND: Record<ExitDirConst, ExitConstant> = {
+  1: FIND_EXIT_TOP,
+  3: FIND_EXIT_RIGHT,
+  5: FIND_EXIT_BOTTOM,
+  7: FIND_EXIT_LEFT,
 };
 
 export function run(creep: Creep): boolean {
@@ -67,27 +70,20 @@ export function run(creep: Creep): boolean {
   }
 
   // ── Get exits ──
-  const exits = Game.map.describeExits(roomName);
-  if (!exits) return false;
+  const exitsRaw = Game.map.describeExits(roomName);
+  if (!exitsRaw) return false;
 
+  // describeExits returns { "1": "W7N4", "3": "W8N4", ... }
+  // Keys are direction constants as strings (1=TOP, 3=RIGHT, 5=BOTTOM, 7=LEFT)
   const exitEntries: Array<{ name: string; deg: number; find: ExitConstant }> = [];
-  // Map exit direction constants to degrees
-  const TOP = 1, RIGHT = 3, BOTTOM = 5, LEFT = 7;
-  // describeExits returns { "1": "roomName", "3": "roomName", ... }
-  for (const dirStr in exits) {
-    const dir = parseInt(dirStr);
-    const remoteName = exits[dirStr];
-    let deg = 0;
-    let find: ExitConstant = FIND_EXIT_TOP;
-    if (dir === TOP) { deg = 0;   find = FIND_EXIT_TOP; }
-    else if (dir === 3)  { deg = 45;  find = FIND_EXIT_TOP_RIGHT; } // TOP_RIGHT
-    else if (dir === RIGHT) { deg = 90;  find = FIND_EXIT_RIGHT; }
-    else if (dir === 7)  { deg = 135; find = FIND_EXIT_BOTTOM_RIGHT; } // BOTTOM_RIGHT
-    else if (dir === BOTTOM) { deg = 180; find = FIND_EXIT_BOTTOM; }
-    else if (dir === 5)  { deg = 225; find = FIND_EXIT_BOTTOM_LEFT; } // BOTTOM_LEFT
-    else if (dir === LEFT) { deg = 270; find = FIND_EXIT_LEFT; }
-    else if (dir === 1)  { deg = 315; find = FIND_EXIT_TOP_LEFT; } // TOP_LEFT
-    exitEntries.push({ name: remoteName, deg, find });
+  for (const dirStr in exitsRaw) {
+    const dir = parseInt(dirStr) as ExitDirConst;
+    if (!(dir in EXIT_TO_DEG)) continue;
+    exitEntries.push({
+      name: exitsRaw[dirStr],
+      deg: EXIT_TO_DEG[dir],
+      find: EXIT_TO_FIND[dir],
+    });
   }
 
   if (exitEntries.length === 0) return false;
@@ -97,12 +93,14 @@ export function run(creep: Creep): boolean {
   if (forward.length === 0) forward = exitEntries;
 
   // ── Score exits by bearing closeness + temperature ──
-  const bearingDeg = (mem.bearing ?? 0) * 45;
+  const bearingDeg = BEARING_DEG[mem.bearing] ?? 0;
   let bestExit = forward[0];
   let bestScore = -Infinity;
 
   for (const exit of forward) {
-    const angleDiff = Math.abs(bearingDeg - exit.deg);
+    // Angular distance — dip around the circle (720° arc)
+    let angleDiff = Math.abs(bearingDeg - exit.deg);
+    if (angleDiff > 180) angleDiff = 360 - angleDiff;
     const base = 180 - angleDiff;
     const tempJitter = (mem.temperature ?? 0) * 180 * Math.random();
     const score = base + tempJitter;
