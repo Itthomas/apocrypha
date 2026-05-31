@@ -87,6 +87,19 @@ export function runTowers(room: Room): void {
     return;
   }
 
+  // ── Friendly creep healing (every tick, after attack, before repair) ──
+  const wounded = room.find(FIND_MY_CREEPS, {
+    filter: c => c.hits < c.hitsMax
+  });
+  if (wounded.length > 0) {
+    for (const tower of towers) {
+      const t = tower as StructureTower;
+      const target = t.pos.findClosestByRange(wounded);
+      if (target) t.heal(target);
+    }
+    return;
+  }
+
   // ── Repair (duty-cycle gated, target-locked) ──
   if (Game.time % 1000 >= 500) return;
 
