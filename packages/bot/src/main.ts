@@ -96,8 +96,9 @@ export function loop(): void {
       acted = mod.run(creep);
     }
     
-    // If role couldn't find work, harvest as fallback
-    if (!acted && role !== 'miner') {
+    // If role couldn't find work, harvest as fallback.
+    // Scouts are excluded — they either explore or stand still.
+    if (!acted && role !== 'miner' && role !== 'scout') {
       roleSurvivor.run(creep);
     }
   }
