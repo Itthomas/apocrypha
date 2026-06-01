@@ -30,10 +30,11 @@ interface SpawnQuota {
  * Get spawn quotas for a room based on RCL.
  */
 function getQuotas(rcl: number): SpawnQuota[] {
-  // RCL 1-2: survivors only
+  // RCL 1-2: survivors + miner (gate handles container check)
   if (rcl <= 2) {
     return [
       { role: 'survivor', minimum: 2, maximum: 4 },
+      { role: 'miner',    minimum: 0, maximum: 0 },
     ];
   }
 
