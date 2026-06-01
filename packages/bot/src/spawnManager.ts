@@ -81,70 +81,68 @@ function containersBuilt(room: Room): boolean {
 // ── Economy Tracker (container energy moving average) ──
 
 interface EconomyMemory {
-  /** Rolling samples of total source container energy (max 5) */
+  /** Rolling window of max(source container energy) samples (max 40) */
   samples: number[];
-  /** Soft cap for survivors, floats between hard min and max */
+  /** Soft cap for survivors, mapped from moving average */
   softCap: number;
-  /** Tick of last cap adjustment */
-  lastAdjustment: number;
   /** Next tick to collect a sample */
   nextSample: number;
 }
 
-const ECO_SAMPLE_INTERVAL = 30;
-const ECO_MAX_SAMPLES = 5;
-const ECO_ADJUST_COOLDOWN = 300;
+const ECO_SAMPLE_INTERVAL = 5;
+const ECO_WINDOW_SIZE = 40;
+
+/** Map the moving average of max container energy to a survivor soft cap */
+function econValToSoftCap(val: number): number {
+  if (val >= 1500) return 8;
+  if (val >= 1000) return 6;
+  if (val >= 500) return 5;
+  return 3;
+}
 
 function runEconomyTracker(room: Room): void {
+  // Only active when miners exist and no storage is built — the window
+  // between first miner spawn and storage construction.
+  if (room.storage) return;
+  const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+  if (miners.length === 0) return;
+
   if (!Memory.economy) {
-    Memory.economy = { samples: [], softCap: 8, lastAdjustment: 0, nextSample: Game.time };
+    Memory.economy = { samples: [], softCap: 8, nextSample: Game.time };
   }
   const econ = Memory.economy as EconomyMemory;
 
-  // Sample total energy in source containers every ECO_SAMPLE_INTERVAL ticks
+  // Sample max container energy every ECO_SAMPLE_INTERVAL ticks
   if (Game.time >= econ.nextSample) {
     econ.nextSample = Game.time + ECO_SAMPLE_INTERVAL;
 
-    let energy = 0, capacity = 0;
+    let maxEnergy = 0;
     const sources = room.find(FIND_SOURCES);
     for (const source of sources) {
       const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
         filter: s => s.structureType === STRUCTURE_CONTAINER
       });
       for (const c of containers) {
-        energy += c.store.getUsedCapacity(RESOURCE_ENERGY);
-        capacity += c.store.getCapacity(RESOURCE_ENERGY);
+        const e = c.store.getUsedCapacity(RESOURCE_ENERGY);
+        if (e > maxEnergy) maxEnergy = e;
       }
     }
 
-    econ.samples.push(capacity > 0 ? energy / capacity : 0);
-    if (econ.samples.length > ECO_MAX_SAMPLES) econ.samples.shift();
+    econ.samples.push(maxEnergy);
+    if (econ.samples.length > ECO_WINDOW_SIZE) econ.samples.shift();
   }
 
-  // Need 3+ samples and cooldown clear before adjusting
-  if (econ.samples.length < 3) return;
-  if (Game.time - econ.lastAdjustment < ECO_ADJUST_COOLDOWN) return;
+  // Window not full yet — keep default cap
+  if (econ.samples.length < ECO_WINDOW_SIZE) return;
 
-  // Count consecutive rises / declines
-  let rises = 0, falls = 0;
-  for (let i = 1; i < econ.samples.length; i++) {
-    if (econ.samples[i] < econ.samples[i - 1]) { falls++; rises = 0; }
-    else if (econ.samples[i] > econ.samples[i - 1]) { rises++; falls = 0; }
-    else { rises = 0; falls = 0; }
-  }
+  // Compute unweighted average and map to soft cap
+  const sum = econ.samples.reduce((a, b) => a + b, 0);
+  const avg = sum / econ.samples.length;
+  const newCap = econValToSoftCap(avg);
 
-  const fill = econ.samples[econ.samples.length - 1];
-  const allHealthy = econ.samples.every(s => s > 0.6);
-
-  const HARD_MIN = 3, HARD_MAX = 8;
-  if (falls >= 3 && fill < 0.3 && econ.softCap > HARD_MIN) {
-    econ.softCap--;
-    econ.lastAdjustment = Game.time;
-    console.log(`[economy] ↓ softCap=${econ.softCap} (energy declining, fill=${(fill*100).toFixed(0)}%)`);
-  } else if ((rises >= 5 && fill > 0.6 || allHealthy) && econ.softCap < HARD_MAX) {
-    econ.softCap++;
-    econ.lastAdjustment = Game.time;
-    console.log(`[economy] ↑ softCap=${econ.softCap} (energy rising, fill=${(fill*100).toFixed(0)}%)`);
+  if (newCap !== econ.softCap) {
+    econ.softCap = newCap;
+    console.log(`[economy] softCap=${econ.softCap} (avg=${avg.toFixed(0)} energy)`);
   }
 }
 function survivorGateRcl3(room: Room): boolean {
