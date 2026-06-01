@@ -85,7 +85,7 @@ export function loop(): void {
 
     // Emergency: if no miners, non-hauler creeps harvest to keep colony alive.
     // Haulers are skipped — they have no WORK parts and rely on container withdrawal.
-    if (role !== 'miner' && role !== 'hauler' && countMiners(creep.room) === 0) {
+    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && countMiners(creep.room) === 0) {
       roleSurvivor.run(creep);
       continue;
     }
