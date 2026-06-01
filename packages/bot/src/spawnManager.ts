@@ -171,37 +171,11 @@ function survivorGateRcl3(room: Room): boolean {
     return spawningCreep && spawningCreep.memory.role === 'miner';
   });
 
-  // If a miner is currently spawning, no survivor needed
+  // If a miner is currently spawning, defer to it
   if (spawningMiner) return false;
 
-  // Check energy economy: is spawn energy critically low AND not recovering?
-  const energyCap = room.energyCapacityAvailable;
-  const energyAvail = room.energyAvailable;
-  const energyRatio = energyAvail / energyCap;
-
-  // If energy is above 30% of capacity, system is healthy — no survivor needed
-  if (energyRatio > 0.3) {
-    // Even if energy ratio looks healthy, check if we can actually afford a miner.
-    // 300/750 = 40% looks fine on paper, but the cheapest miner is 500e — so
-    // without this check the colony starves while the gate says "we're healthy."
-    const rcl = room.controller?.level ?? 0;
-    const minerBody = getBody('miner', rcl, energyAvail);
-    if (!minerBody || minerBody.length === 0) return true;
-    return false;
-  }
-
-  // Check telemetry: has energy been flowing recently?
-  const stats = Memory.stats;
-  if (stats) {
-    const roomStats = stats.rooms?.[room.name];
-    if (roomStats) {
-      // If energy was harvested in the last stats window, system is working
-      if (roomStats.energy.harvested > 0) return false;
-    }
-  }
-
-  // Energy is low AND no recent harvests — economy is faltering
-  return energyAvail < 100; // Critical threshold
+  // Soft cap from economy tracker is the sole limiter — spawn to fill
+  return true;
 }
 
 /**
