@@ -107,6 +107,12 @@ function chooseTask(creep: Creep): TASK {
     return TASK.DELIVER;
   }
 
+  // CONTROLLER EMERGENCY: downgrade timer < 2000 → upgrade now
+  const controller = creep.room.controller;
+  if (controller && controller.my && controller.ticksToDowngrade < 2000 && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+    return TASK.UPGRADE;
+  }
+
   // REPAIR: damaged structures below 50% hp.
   // Ramparts use the RCL-gated artificial threshold instead of actual max health.
   if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
