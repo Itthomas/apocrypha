@@ -290,42 +290,50 @@ function spawnGate(role: string, room: Room): boolean {
 
 // ── Colonization scout spawning ──
 
-const SCOUT_BEARINGS = [0, 1, 2, 3, 4, 5, 6, 7];
 const SCOUT_MAX_RESPAWNS = 5;
 
 function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
-  const col = Memory.colonization;
+  const col = Memory.colonization as any;
   if (!col?.active || Game.time >= col.deadline) return false;
   if ((room.controller?.level ?? 0) < 5) return false;
 
-  for (const bearing of SCOUT_BEARINGS) {
-    const key = `${room.name}_${bearing}`;
+  for (let i = 0; i < 8; i++) {
+    const key = String(i);
     const state = col.scoutState[key];
-    const respawns = state?.respawns ?? 0;
+    if (!state) continue;
 
-    // Already alive? Check Game.creeps globally — scout may be in neighbor room
-    const name = state?.name;
-    if (name && Game.creeps[name]) continue;
+    // Already alive?
+    if (state.name && Game.creeps[state.name]) continue;
 
     // Respawning: must be within budget
+    const respawns = state.respawns ?? 0;
     if (respawns >= SCOUT_MAX_RESPAWNS) continue;
 
-    const scoutName = `scout_${room.name}_${bearing}_${Game.time}`;
+    // Respawned scouts restart in transit to the same target
+    const phase = respawns > 0 ? 'transit' : (state.phase ?? 'transit');
+
+    const scoutName = `scout_${i}_${Game.time}`;
     const result = spawn.spawnCreep([MOVE], scoutName, {
       memory: {
         role: 'scout',
-        bearing,
-        temperature: 0.1 * respawns,
-        prevRoom: '',
+        targetRoom: state.targetRoom,
+        phase,
+        sourceRoom: room.name,
+        respawns: respawns + 1,
         chosenExit: 0,
         lastRoom: '',
-        respawns: respawns + 1,
-        sourceRoom: room.name,
+        prevRoom: '',
       }
     });
 
     if (result === OK) {
-      col.scoutState[key] = { bearing, respawns: respawns + 1, name: scoutName };
+      col.scoutState[key] = {
+        targetRoom: state.targetRoom,
+        phase,
+        respawns: respawns + 1,
+        name: scoutName,
+        spawnedFrom: room.name,
+      };
       return true;
     }
   }

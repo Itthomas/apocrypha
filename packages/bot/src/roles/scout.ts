@@ -1,12 +1,15 @@
 /**
- * roles/scout.ts — Colonization scout
+ * roles/scout.ts — Colonization scout (two-phase)
  *
- * 1-MOVE disposable creep that explores the world in a cardinal bearing
- * direction, scoring new rooms for colonization candidacy.
+ * Phase 1 (Transit): creep.moveTo(center of targetRoom) — built-in
+ *   pathfinder handles all inter-room exit routing. No manual steering.
  *
- * Maze routing: bearing-priority exit selection with single prevRoom
- * backtrack fallback. Exit chosen once per room and persisted — no
- * oscillation from per-tick re-evaluation.
+ * Phase 2 (Explore): visited-filtered random walk. On each room entry,
+ *   picks a random exit from those leading to unvisited rooms. Falls
+ *   back to any random exit if all neighbors are visited.
+ *
+ * Every room entered (both phases) is scored and saved to the shared
+ * Memory.colonization leaderboard via scoreRoom().
  *
  * Edge override: scouts on room boundaries (x/y 0 or 49) pathfind to
  * room center instead of struggling with edge exit tiles.
@@ -16,30 +19,16 @@ import { scoreRoom } from '../colonization/scoring';
 
 interface ScoutMemory {
   role: 'scout';
-  bearing: number;      // 0..7 in 45° steps (N, NE, E, SE, S, SW, W, NW)
-  temperature: number;  // 0..1 randomness offset
-  prevRoom: string;     // room entered FROM
-  chosenExit: number;   // chosen exit direction (1/3/5/7), persisted per room
-  lastRoom: string;     // room where chosenExit was selected
-  respawns: number;
+  targetRoom: string;
+  phase: 'transit' | 'explore';
   sourceRoom: string;
+  respawns: number;
+  prevRoom: string;
+  chosenExit: number;
+  lastRoom: string;
 }
 
-// Bearing → cardinal direction degrees (diagonals handled by scoring)
-const BEARING_DEG: Record<number, number> = {
-  0: 0,   1: 45,  2: 90,  3: 135,
-  4: 180, 5: 225, 6: 270, 7: 315,
-};
-
-// Only 4 cardinal exit constants exist in Screeps
 type ExitDirConst = 1 | 3 | 5 | 7;
-
-const EXIT_TO_DEG: Record<ExitDirConst, number> = {
-  1: 0,    // TOP    → N
-  3: 90,   // RIGHT  → E
-  5: 180,  // BOTTOM → S
-  7: 270,  // LEFT   → W
-};
 
 const EXIT_TO_FIND: Record<ExitDirConst, ExitConstant> = {
   1: FIND_EXIT_TOP,
@@ -50,7 +39,7 @@ const EXIT_TO_FIND: Record<ExitDirConst, ExitConstant> = {
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as ScoutMemory;
-  const col = Memory.colonization;
+  const col = Memory.colonization as any;
   if (!col?.active || Game.time >= col.deadline) {
     return false;
   }
@@ -64,7 +53,7 @@ export function run(creep: Creep): boolean {
 
   const roomName = creep.room.name;
 
-  // ── New room → score it ──
+  // ── Score every new room (both phases) ──
   if (col.roomsVisited.indexOf(roomName) === -1) {
     col.roomsVisited.push(roomName);
     const result = scoreRoom(roomName);
@@ -81,13 +70,24 @@ export function run(creep: Creep): boolean {
     }
   }
 
-  // ── Choose exit (once per room) ──
-  if (mem.lastRoom !== roomName) {
-    mem.lastRoom = roomName;
-    mem.chosenExit = pickExit(creep, mem);
+  // ── Transit phase: moveTo center of target room ──
+  if (mem.phase === 'transit') {
+    if (roomName === mem.targetRoom) {
+      mem.phase = 'explore';
+    } else {
+      creep.moveTo(new RoomPosition(25, 25, mem.targetRoom), { reusePath: 50 });
+      mem.prevRoom = roomName;
+      return true;
+    }
   }
 
-  // ── Move toward chosen exit ──
+  // ── Explore phase: visited-filtered random walk ──
+  // Choose exit once per room (anti-oscillation)
+  if (mem.lastRoom !== roomName) {
+    mem.lastRoom = roomName;
+    mem.chosenExit = pickExploreExit(creep, col.roomsVisited as string[]);
+  }
+
   const findConst = EXIT_TO_FIND[mem.chosenExit as ExitDirConst];
   if (findConst) {
     const tiles = creep.room.find(findConst);
@@ -96,50 +96,32 @@ export function run(creep: Creep): boolean {
     }
   }
 
-  // Record prevRoom for when boundary is crossed
   mem.prevRoom = roomName;
-
   return true;
 }
 
-// ── Exit selection ──
+// ── Explore exit selection ──
 
-function pickExit(creep: Creep, mem: ScoutMemory): number {
+/**
+ * Pick a random exit preferring rooms NOT in the shared visited set.
+ * Falls back to any random exit if all neighbors are already visited.
+ */
+function pickExploreExit(creep: Creep, visited: string[]): number {
   const exitsRaw = Game.map.describeExits(creep.room.name);
-  if (!exitsRaw) return 1; // fallback TOP
+  if (!exitsRaw) return 1;
 
-  const exitEntries: Array<{ name: string; deg: number; dirConst: ExitDirConst }> = [];
+  const unvisited: ExitDirConst[] = [];
+  const all: ExitDirConst[] = [];
+
   for (const dirStr in exitsRaw) {
     const dir = parseInt(dirStr) as ExitDirConst;
-    if (!(dir in EXIT_TO_DEG)) continue;
-    exitEntries.push({
-      name: exitsRaw[dirStr],
-      deg: EXIT_TO_DEG[dir],
-      dirConst: dir,
-    });
-  }
-
-  if (exitEntries.length === 0) return 1;
-
-  // Filter: exclude prevRoom (unless it's the only exit)
-  let forward = exitEntries.filter(e => e.name !== mem.prevRoom);
-  if (forward.length === 0) forward = exitEntries;
-
-  // Score by bearing closeness + temperature (once — no Math.random per tick)
-  const bearingDeg = BEARING_DEG[mem.bearing] ?? 0;
-  let best = forward[0];
-  let bestScore = -Infinity;
-
-  for (const exit of forward) {
-    let angleDiff = Math.abs(bearingDeg - exit.deg);
-    if (angleDiff > 180) angleDiff = 360 - angleDiff;
-    const base = 180 - angleDiff;
-    const score = base + (mem.temperature ?? 0) * 90;
-    if (score > bestScore) {
-      bestScore = score;
-      best = exit;
+    if (!(dir in EXIT_TO_FIND)) continue;
+    all.push(dir);
+    if (visited.indexOf(exitsRaw[dirStr]) === -1) {
+      unvisited.push(dir);
     }
   }
 
-  return best.dirConst;
+  const pool = unvisited.length > 0 ? unvisited : all;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
