@@ -297,15 +297,15 @@ export function run(creep: Creep): boolean {
 // ── Harvest ──
 
 /**
- * At RCL 3+: withdraw from miner containers instead of harvesting
- * directly from sources. Falls back to direct source harvesting if
- * no container has energy AND no miner creep exists in the room.
+ * Miner-aware harvesting: when miners exist, survivors pull from containers.
+ * When no miners are in the room, survivors harvest directly from sources.
+ * Not gated by RCL — the miner count IS the decision.
  */
 function doHarvest(creep: Creep): boolean {
-  const rcl = creep.room.controller?.level ?? 0;
+  const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
 
-  // RCL 3+: try container withdrawal first
-  if (rcl >= 3) {
+  // 1+ miners → containers are being refilled, pull from them
+  if (miners.length > 0) {
     // Prefer a container that can fully fill the survivor's carry
     const container = getSourceContainer(creep, creep.store.getFreeCapacity());
     if (container) {
@@ -324,17 +324,11 @@ function doHarvest(creep: Creep): boolean {
       return true;
     }
 
-    // No source containers at all — check if a miner exists
-    const miners = creep.room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
-    if (miners.length === 0) {
-      // No miners and no containers — fall through to direct harvesting
-    } else {
-      // Miner exists but no container — wait near spawn for construction
-      return true;
-    }
+    // Miners exist but no containers yet — wait for construction
+    return true;
   }
 
-  // Direct source harvesting (RCL 1-2, or RCL 3+ fallback)
+  // 0 miners → harvest directly from sources
   const sources = creep.room.find(FIND_SOURCES_ACTIVE)
     .filter(s => s.energy > 0)
     .sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b));

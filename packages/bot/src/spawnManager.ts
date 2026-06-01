@@ -265,17 +265,42 @@ function upgraderGate(room: Room): boolean {
   return (container as StructureContainer).store.getFreeCapacity(RESOURCE_ENERGY) === 0;
 }
 
+/** Miner gate: only spawn if a source with a container has no miner assigned yet */
+function minerGate(room: Room): boolean {
+  const sources = room.find(FIND_SOURCES);
+
+  // Sources that have a container built next to them
+  const eligibleSources = sources.filter(s =>
+    s.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: st => st.structureType === STRUCTURE_CONTAINER
+    }).length > 0
+  );
+
+  if (eligibleSources.length === 0) return false;
+
+  // Count miners already assigned to eligible sources
+  const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
+  let assignedCount = 0;
+  for (const m of miners) {
+    const sid = (m.memory as any).sourceId as string | undefined;
+    if (sid && eligibleSources.some(s => s.id === sid)) assignedCount++;
+  }
+
+  return assignedCount < eligibleSources.length;
+}
+
 /** Dispatch to the correct gate function */
 function spawnGate(role: string, room: Room): boolean {
-  // If required containers aren't built, only miners and survivors may spawn.
-  // Miners can direct-harvest until containers are ready; survivors are generalists.
-  if (role !== 'survivor' && role !== 'miner' && !containersBuilt(room)) return false;
+  // If required containers aren't built, only survivors may spawn.
+  // Miners get their own per-source container gate; others wait.
+  if (role !== 'survivor' && !containersBuilt(room)) return false;
 
   switch (role) {
     case 'survivor': {
       const rcl = room.controller?.level ?? 0;
       return rcl >= 5 ? survivorGateRcl5(room) : survivorGateRcl3(room);
     }
+    case 'miner':   return minerGate(room);
     case 'builder':  return builderGate(room);
     case 'upgrader': return upgraderGate(room);
     case 'hauler': {
@@ -284,7 +309,7 @@ function spawnGate(role: string, room: Room): boolean {
       });
       return containers.length > 0;
     }
-    default: return true; // miner always allowed
+    default: return true;
   }
 }
 
@@ -393,7 +418,7 @@ export function runSpawnManager(room: Room): void {
     if (cooldown[role] && Game.time < cooldown[role]) continue;
 
     // Get body with current energy
-    const body = getBody(role, rcl, room.energyAvailable);
+    const body = getBody(role, rcl, room.energyAvailable, room.energyCapacityAvailable);
 
     // Cooldown just expired → force-spawn with whatever we have
     if (cooldown[role] && Game.time >= cooldown[role]) {
@@ -401,7 +426,7 @@ export function runSpawnManager(room: Room): void {
       if (!body || body.length === 0) continue; // still nothing affordable — skip
     } else {
       // No cooldown active — check if we should wait for a better body
-      const bestBody = getBody(role, rcl, room.energyCapacityAvailable);
+      const bestBody = getBody(role, rcl, room.energyCapacityAvailable, room.energyCapacityAvailable);
       if (bestBody && body) {
         const bestCost = bestBody.reduce((sum, p) => sum + BODYPART_COST[p], 0);
         const curCost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);

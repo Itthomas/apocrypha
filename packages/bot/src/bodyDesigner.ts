@@ -81,8 +81,11 @@ function specCost(spec: BodySpec): number {
  * Get the optimal body for a role at the current RCL and energy budget.
  * Tries all matching tiers (minRcl ≤ current RCL), sorted by cost descending.
  * Returns the most expensive affordable spec — regardless of which tier it's from.
+ *
+ * @param energyCap Optional room.energyCapacityAvailable — only used for
+ *   miner fallback body when extensions are too few for the 700e baseline.
  */
-export function getBody(role: string, rcl: number, energyAvailable: number): BodyPartConstant[] | null {
+export function getBody(role: string, rcl: number, energyAvailable: number, energyCap?: number): BodyPartConstant[] | null {
   const tiers = BODY_TIERS[role];
   if (!tiers) return null;
 
@@ -93,6 +96,11 @@ export function getBody(role: string, rcl: number, energyAvailable: number): Bod
       specs.push(tier.primary);
       if (tier.fallback) specs.push(tier.fallback);
     }
+  }
+
+  // Miner: add 4:1:1 fallback when room max energy capacity < 700
+  if (role === 'miner' && energyCap !== undefined && energyCap < 700) {
+    specs.push({ work: 4, carry: 1, move: 1 });
   }
 
   // Sort by cost descending — best body first
