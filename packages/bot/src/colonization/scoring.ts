@@ -62,10 +62,7 @@ const MIN_SOURCES = 2;
 
 /**
  * Score a room for colonization. Returns null if the room doesn't meet
- * minimum requirements (no room, no controller, fewer than MIN_SOURCES
- * sources, controller is claimed when requireUnclaimed is true,
- * controller is reserved when requireUnreserved is true,
- * or blueprint doesn't fit anywhere).
+ * minimum requirements. Rejection reasons are logged to Memory._scoringRejects.
  *
  * @param requireUnclaimed If true (default), rejects rooms where the
  *   controller is already owned by any player.
@@ -74,22 +71,22 @@ const MIN_SOURCES = 2;
  */
 export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, requireUnreserved: boolean = true): RoomScore | null {
   const room = Game.rooms[roomName];
-  if (!room) return null;
+  if (!room) return reject(roomName, 'no_room');
 
   // ── Gate checks ──
 
   // Always: room must have a controller
   const controller = room.controller;
-  if (!controller) return null;
+  if (!controller) return reject(roomName, 'no_controller');
 
   // Optional: controller must be unclaimed
-  if (requireUnclaimed && controller.owner) return null;
+  if (requireUnclaimed && controller.owner) return reject(roomName, 'claimed');
 
   // Optional: controller must be unreserved
-  if (requireUnreserved && controller.reservation) return null;
+  if (requireUnreserved && controller.reservation) return reject(roomName, 'reserved');
 
   const sources = room.find(FIND_SOURCES);
-  if (sources.length < MIN_SOURCES) return null;
+  if (sources.length < MIN_SOURCES) return reject(roomName, 'sources<2');
 
   // Collect points of interest
   const pois: POI[] = [];
@@ -100,7 +97,7 @@ export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, re
 
   // Find optimal spawn position (exhaustive scan with position scoring)
   const result = findOptimalSpawn(room.name, pois);
-  if (!result) return null;
+  if (!result) return reject(roomName, 'no_spawn_pos');
 
   // Room-level score: position score + source count bonus
   let roomScore = result.positionScore + sources.length * SOURCE_COUNT_BONUS;
@@ -298,4 +295,12 @@ function scorePosition(
     positionScore,
     travelCosts: { sources: sourcesCosts, mineral: mineralCost, controller: controllerCost },
   };
+}
+
+// ── Rejection tracing ──
+
+function reject(roomName: string, reason: string): null {
+  if (!Memory._scoringRejects) (Memory as any)._scoringRejects = {};
+  (Memory as any)._scoringRejects[roomName] = { tick: Game.time, reason };
+  return null;
 }
