@@ -64,12 +64,15 @@ const MIN_SOURCES = 2;
  * Score a room for colonization. Returns null if the room doesn't meet
  * minimum requirements (no room, no controller, fewer than MIN_SOURCES
  * sources, controller is claimed when requireUnclaimed is true,
+ * controller is reserved when requireUnreserved is true,
  * or blueprint doesn't fit anywhere).
  *
  * @param requireUnclaimed If true (default), rejects rooms where the
  *   controller is already owned by any player.
+ * @param requireUnreserved If true (default), rejects rooms where the
+ *   controller is reserved by another player.
  */
-export function scoreRoom(roomName: string, requireUnclaimed: boolean = true): RoomScore | null {
+export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, requireUnreserved: boolean = true): RoomScore | null {
   const room = Game.rooms[roomName];
   if (!room) return null;
 
@@ -81,6 +84,9 @@ export function scoreRoom(roomName: string, requireUnclaimed: boolean = true): R
 
   // Optional: controller must be unclaimed
   if (requireUnclaimed && controller.owner) return null;
+
+  // Optional: controller must be unreserved
+  if (requireUnreserved && controller.reservation) return null;
 
   const sources = room.find(FIND_SOURCES);
   if (sources.length < MIN_SOURCES) return null;
