@@ -64,6 +64,13 @@ export function run(creep: Creep): boolean {
         worldY: result.worldY,
       };
     }
+  } else if (result) {
+    // Scored but filtered — log positionScore and sources for diagnosis
+    if (!Memory._scoringRejects) (Memory as any)._scoringRejects = {};
+    (Memory as any)._scoringRejects[roomName] = {
+      tick: Game.time,
+      reason: 'score=' + result.score + ' ps=' + result.positionScore + ' src=' + result.sources,
+    };
   }
 
   return true;
