@@ -3,8 +3,10 @@
  *
  * Phases: scouting → claiming → building → complete
  *
- * Scouting: 8 scouts explore a 5×5 grid around spawn. Shared
- *   roomsVisited prevents overlap. Best scored room saved.
+ * Scouting: pre-screens a ±6 room grid around the RCL 5+ source room
+ *   using terrain-only blueprint viability checks (no vision needed).
+ *   One scout per eligible room travels directly to its target,
+ *   scores it, and saves results to the shared leaderboard.
  *
  * Claiming: spawn a claimer creep to claim the controller and
  *   place the spawn construction site.
@@ -16,15 +18,11 @@
  *   finish their natural lives. Cooldown prevents immediate re-wave.
  */
 
+import { canFitBlueprint } from './colonization/scoring';
+
 const DEADLINE_TICKS = 3000;
 const COOLDOWN_TICKS = 10000;
-
-/** 8 offsets on a 5×5 square centered at spawn (corners + cardinals) */
-const SCOUT_OFFSETS: Array<[number, number]> = [
-  [2, 2], [2, 0], [2, -2],
-  [0, -2], [-2, -2], [-2, 0],
-  [-2, 2], [0, 2],
-];
+const SCOUT_GRID_RADIUS = 6;
 
 // ── Room name helpers ──
 
@@ -101,27 +99,44 @@ export function runColonization(): void {
 
   // ── Start new scouting wave ──
   const [sx, sy] = parseRoomXY(spawnRoom.name);
-  const scoutTargets = SCOUT_OFFSETS.map(([dx, dy]) => roomName(sx + dx, sy + dy));
+
+  // Generate ±6 grid and pre-screen for blueprint viability
+  const eligibleRooms: string[] = [];
+  for (let dx = -SCOUT_GRID_RADIUS; dx <= SCOUT_GRID_RADIUS; dx++) {
+    for (let dy = -SCOUT_GRID_RADIUS; dy <= SCOUT_GRID_RADIUS; dy++) {
+      const name = roomName(sx + dx, sy + dy);
+      if (name === spawnRoom.name) continue; // skip source room
+      if (canFitBlueprint(name)) {
+        eligibleRooms.push(name);
+      }
+    }
+  }
+
+  if (eligibleRooms.length === 0) {
+    console.log(`[colonization] No eligible rooms in ±${SCOUT_GRID_RADIUS} grid`);
+    Memory.colonization = { cooldownUntil: Game.time + COOLDOWN_TICKS } as any;
+    return;
+  }
 
   const scoutState: Record<string, any> = {};
-  for (let i = 0; i < 8; i++) {
-    scoutState[String(i)] = {
-      targetRoom: scoutTargets[i],
-      phase: 'transit',
+  for (const room of eligibleRooms) {
+    scoutState[room] = {
+      targetRoom: room,
       respawns: 0,
       name: '',
       spawnedFrom: spawnRoom.name,
     };
   }
 
+  console.log(`[colonization] Pre-screened ${eligibleRooms.length} rooms — scouting wave begins`);
+
   Memory.colonization = {
     active: true,
     deadline: Game.time + DEADLINE_TICKS,
     cooldownUntil: 0,
-    roomsVisited: [spawnRoom.name],
     candidates: {},
     bestRoom: null,
-    scoutTargets,
+    scoutTargets: eligibleRooms,
     scoutState,
   } as any;
 }

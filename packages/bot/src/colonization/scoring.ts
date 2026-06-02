@@ -191,6 +191,27 @@ function parseBlueprintOffsets(): Array<{ x: number; y: number }> {
 }
 
 /**
+ * Pre-screen a room for blueprint viability using only terrain data.
+ * Does NOT require vision — works via Game.map.getRoomTerrain.
+ * Returns true if ANY tile in the room fits the blueprint footprint.
+ */
+export function canFitBlueprint(roomName: string): boolean {
+  const bpOffsets = parseBlueprintOffsets();
+  if (bpOffsets.length === 0) return false;
+
+  const terrain = Game.map.getRoomTerrain(roomName);
+
+  for (let x = 1; x < 49; x++) {
+    for (let y = 1; y < 49; y++) {
+      if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+      if (blueprintFits(terrain, x, y, bpOffsets)) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Exhaustively scan every tile in the room. For each position where
  * the blueprint fits, compute the position score from precomputed
  * distance maps. Track and return the best.

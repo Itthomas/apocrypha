@@ -293,9 +293,11 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
   if (!col?.active || Game.time >= col.deadline) return false;
   if ((room.controller?.level ?? 0) < 5) return false;
 
-  for (let i = 0; i < 8; i++) {
-    const key = String(i);
-    const state = col.scoutState[key];
+  const targets: string[] = col.scoutTargets || [];
+  if (targets.length === 0) return false;
+
+  for (const targetRoom of targets) {
+    const state = col.scoutState[targetRoom];
     if (!state) continue;
 
     // Already alive?
@@ -305,26 +307,19 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
     const respawns = state.respawns ?? 0;
     if (respawns >= SCOUT_MAX_RESPAWNS) continue;
 
-    // Respawned scouts restart in transit to the same target
-    const phase = respawns > 0 ? 'transit' : (state.phase ?? 'transit');
-
-    const scoutName = `scout_${i}_${Game.time}`;
+    const scoutName = `scout_${targetRoom}_${Game.time}`;
     const result = spawn.spawnCreep([MOVE], scoutName, {
       memory: {
         role: 'scout',
-        targetRoom: state.targetRoom,
-        phase,
+        targetRoom,
         sourceRoom: room.name,
         respawns: respawns + 1,
-        chosenExit: 0,
-        lastRoom: '',
       }
     });
 
     if (result === OK) {
-      col.scoutState[key] = {
-        targetRoom: state.targetRoom,
-        phase,
+      col.scoutState[targetRoom] = {
+        targetRoom,
         respawns: respawns + 1,
         name: scoutName,
         spawnedFrom: room.name,
