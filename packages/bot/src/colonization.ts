@@ -106,8 +106,12 @@ export function runColonization(): void {
     for (let dy = -SCOUT_GRID_RADIUS; dy <= SCOUT_GRID_RADIUS; dy++) {
       const name = roomName(sx + dx, sy + dy);
       if (name === spawnRoom.name) continue; // skip source room
-      if (canFitBlueprint(name)) {
-        eligibleRooms.push(name);
+      try {
+        if (canFitBlueprint(name)) {
+          eligibleRooms.push(name);
+        }
+      } catch (_e) {
+        // Room doesn't exist (e.g. outside world bounds) — skip
       }
     }
   }
