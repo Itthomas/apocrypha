@@ -45,7 +45,7 @@ interface SpawnResult {
 
 const SWAMP_COST = 5;
 const ROOM_SIZE = 50;
-const MAX_DIST = ROOM_SIZE * SWAMP_COST + ROOM_SIZE; // safe upper bound for Dial buckets
+const MAX_DIST = 600; // safe upper bound for Dial buckets (max path ~480)
 
 // Position scoring weights — sources prioritized
 const SOURCE_TRAVEL_WEIGHT = 10;
@@ -164,7 +164,9 @@ function computeDistanceMap(roomName: string, fromX: number, fromY: number): num
       const ni = idx(nx, ny);
       if (nd < dist[ni]) {
         dist[ni] = nd;
-        buckets[nd].push([nx, ny]);
+        if (nd <= MAX_DIST) {
+          buckets[nd].push([nx, ny]);
+        }
       }
     }
   }

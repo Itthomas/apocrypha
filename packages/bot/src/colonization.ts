@@ -17,11 +17,11 @@
 const DEADLINE_TICKS = 3000;
 const COOLDOWN_TICKS = 10000;
 
-/** 8 offsets on a 9×9 square centered at spawn (corners + cardinals) */
+/** 8 offsets on a 5×5 square centered at spawn (corners + cardinals) */
 const SCOUT_OFFSETS: Array<[number, number]> = [
-  [4, 4], [4, 0], [4, -4],
-  [0, -4], [-4, -4], [-4, 0],
-  [-4, 4], [0, 4],
+  [2, 2], [2, 0], [2, -2],
+  [0, -2], [-2, -2], [-2, 0],
+  [-2, 2], [0, 2],
 ];
 
 // ── Room name helpers ──
