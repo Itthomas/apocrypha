@@ -1,20 +1,23 @@
 /**
  * colonization/scoring.ts — Room evaluation for colonization
  *
- * For a given room, finds the best spawn position by checking blueprint
- * fit against terrain, counts sources, and computes swamp-aware travel
- * costs from the ideal spawn to each point of interest.
+ * Gating checks run first (room exists, 2+ sources). If passed,
+ * precomputes swamp-aware distance maps from each POI to every tile
+ * via Dial's algorithm, then exhaustively scans the room (every tile)
+ * for blueprint fit. Each valid position is scored by its weighted
+ * travel distances — sources weighted highest. Returns the optimal
+ * spawn position, its travel-cost-based score, and a complete RoomScore.
  */
 
-import { BLUEPRINT } from '../blueprint';
 import { getBlueprintPositions } from '../blueprint';
 
 export interface RoomScore {
   name: string;
-  score: number;
+  score: number;           // overall room score
+  positionScore: number;   // travel-cost-based position score
   sources: number;
-  worldX: number;       // ideal spawn world coordinates
-  worldY: number;
+  worldX: number;          // optimal spawn x (room-local)
+  worldY: number;          // optimal spawn y (room-local)
   travelCosts: {
     sources: number[];
     mineral: number;
@@ -28,31 +31,47 @@ interface POI {
   y: number;
 }
 
-const SWAMP_COST = 5;   // swamp multiplies base move cost
-const SOURCE_WEIGHT = 1000;
-const TRAVEL_WEIGHT = 10;
-const CONTROLLER_BONUS = 200;
+/** Result from the exhaustive spawn-position search */
+interface SpawnResult {
+  x: number;
+  y: number;
+  positionScore: number;
+  travelCosts: {
+    sources: number[];
+    mineral: number;
+    controller: number;
+  };
+}
+
+const SWAMP_COST = 5;
+const ROOM_SIZE = 50;
+const MAX_DIST = ROOM_SIZE * SWAMP_COST + ROOM_SIZE; // safe upper bound for Dial buckets
+
+// Position scoring weights — sources prioritized
+const SOURCE_TRAVEL_WEIGHT = 10;
+const MINERAL_TRAVEL_WEIGHT = 3;
+const CONTROLLER_TRAVEL_WEIGHT = 3;
+
+// Room-level bonuses
+const SOURCE_COUNT_BONUS = 1000;
+
+// Minimum sources required
+const MIN_SOURCES = 2;
+
+// ── Public API ──
 
 /**
  * Score a room for colonization. Returns null if the room doesn't meet
- * minimum requirements (at least 2 sources, blueprint fits somewhere).
+ * minimum requirements (doesn't exist, fewer than MIN_SOURCES sources,
+ * or blueprint doesn't fit anywhere).
  */
 export function scoreRoom(roomName: string): RoomScore | null {
-  // Can't use Game.rooms for unscouted rooms — must use Game.map.getRoomTerrain
-  // But we CAN use Game.rooms if the scout is currently in the room.
-  // For now, assume called while scout IS in the room.
-
-  // We need a Game.rooms reference — this function must be called from within
-  // the scout's run() when it enters a new room.
   const room = Game.rooms[roomName];
   if (!room) return null;
 
+  // ── Gate checks ──
   const sources = room.find(FIND_SOURCES);
-  if (sources.length < 2) return null; // hard gate
-
-  // Find best spawn position by blueprint fit
-  const spawnPos = findBestSpawnPosition(room);
-  if (!spawnPos) return null; // blueprint doesn't fit anywhere
+  if (sources.length < MIN_SOURCES) return null;
 
   // Collect points of interest
   const pois: POI[] = [];
@@ -62,70 +81,128 @@ export function scoreRoom(roomName: string): RoomScore | null {
   const controller = room.controller;
   if (controller) pois.push({ type: 'controller', x: controller.pos.x, y: controller.pos.y });
 
-  // Compute swamp-aware travel costs from spawn to each POI
-  const travelCosts = computeTravelCosts(room, spawnPos.x, spawnPos.y, pois);
+  // Find optimal spawn position (exhaustive scan with position scoring)
+  const result = findOptimalSpawn(room.name, pois);
+  if (!result) return null;
 
-  // Score formula
-  let score = sources.length * SOURCE_WEIGHT;
-
-  const totalTravel =
-    sum(travelCosts.sources) +
-    travelCosts.mineral +
-    travelCosts.controller;
-  score -= totalTravel * TRAVEL_WEIGHT;
-
-  // Controller proximity bonus
-  if (travelCosts.controller < 5) score += CONTROLLER_BONUS;
+  // Room-level score: position score + source count bonus
+  let roomScore = result.positionScore + sources.length * SOURCE_COUNT_BONUS;
 
   // Soft penalty for hostile structures
   const hostiles = room.find(FIND_HOSTILE_STRUCTURES);
-  if (hostiles.length > 0) score = Math.floor(score / 2);
-
-  // Convert room coords to world coords
-  const worldX = spawnPos.x;
-  const worldY = spawnPos.y;
+  if (hostiles.length > 0) roomScore = Math.floor(roomScore / 2);
 
   return {
     name: roomName,
-    score,
+    score: roomScore,
+    positionScore: result.positionScore,
     sources: sources.length,
-    worldX,
-    worldY,
-    travelCosts,
+    worldX: result.x,
+    worldY: result.y,
+    travelCosts: result.travelCosts,
   };
 }
 
-// ── Spawn position search ──
-
-const SEARCH_STEP = 3; // check every 3rd tile, then fine-tune
+// ── Distance map (Dial's algorithm) ──
 
 /**
- * Find the best position in the room to place our spawn such that
- * all blueprint structures fit on non-wall terrain.
- *
- * Strategy: scan the room in a grid with step=3, check blueprint fit
- * at each position. Return the first valid position found (center-
- * biased by scanning from controller outward later if needed).
+ * Precompute swamp-aware distances from (fromX, fromY) to every tile
+ * in the room. Uses Dial's algorithm (bucket-based Dijkstra) since
+ * edge weights are small integers (1 or 5). Returns a flat number[]
+ * indexed by y*50+x for cache-friendly lookup during the scan.
  */
-function findBestSpawnPosition(room: Room): { x: number; y: number } | null {
-  // Collect all blueprint positions (relative offsets from spawn)
-  const bpOffsets = getBlueprintPositions();
-  if (bpOffsets.length === 0) return null;
+function computeDistanceMap(roomName: string, fromX: number, fromY: number): number[] {
+  const dist = new Array<number>(ROOM_SIZE * ROOM_SIZE).fill(Infinity);
+  const terrain = Game.map.getRoomTerrain(roomName);
 
-  const terrain = Game.map.getRoomTerrain(room.name);
+  // Buckets indexed by distance
+  const buckets: Array<Array<[number, number]>> = Array(MAX_DIST + 1);
+  for (let i = 0; i <= MAX_DIST; i++) buckets[i] = [];
 
-  // Scan room with grid step
-  for (let x = SEARCH_STEP; x < 49; x += SEARCH_STEP) {
-    for (let y = SEARCH_STEP; y < 49; y += SEARCH_STEP) {
-      if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+  const idx = (x: number, y: number) => y * ROOM_SIZE + x;
+  dist[idx(fromX, fromY)] = 0;
+  buckets[0].push([fromX, fromY]);
 
-      if (blueprintFits(terrain, x, y, bpOffsets)) {
-        return { x, y };
+  let currentBucket = 0;
+
+  while (currentBucket <= MAX_DIST) {
+    // Advance to next non-empty bucket
+    while (currentBucket <= MAX_DIST && buckets[currentBucket].length === 0) {
+      currentBucket++;
+    }
+    if (currentBucket > MAX_DIST) break;
+
+    const [x, y] = buckets[currentBucket].pop()!;
+    const d = dist[idx(x, y)];
+    if (d < currentBucket) continue; // stale entry
+
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || nx >= ROOM_SIZE || ny < 0 || ny >= ROOM_SIZE) continue;
+      if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+
+      const edgeCost = terrain.get(nx, ny) === TERRAIN_MASK_SWAMP ? SWAMP_COST : 1;
+      const nd = d + edgeCost;
+      const ni = idx(nx, ny);
+      if (nd < dist[ni]) {
+        dist[ni] = nd;
+        buckets[nd].push([nx, ny]);
       }
     }
   }
 
-  return null;
+  return dist;
+}
+
+// ── Spawn position search ──
+
+/**
+ * Parse blueprint offsets from Set<string> ("x,y") to Array<{x,y}>.
+ * The blueprint module returns a Set of comma-delimited coordinate strings.
+ */
+function parseBlueprintOffsets(): Array<{ x: number; y: number }> {
+  const raw = getBlueprintPositions();
+  const offsets: Array<{ x: number; y: number }> = [];
+  for (const entry of raw) {
+    const [xs, ys] = entry.split(',');
+    offsets.push({ x: parseInt(xs, 10), y: parseInt(ys, 10) });
+  }
+  return offsets;
+}
+
+/**
+ * Exhaustively scan every tile in the room. For each position where
+ * the blueprint fits, compute the position score from precomputed
+ * distance maps. Track and return the best.
+ */
+function findOptimalSpawn(roomName: string, pois: POI[]): SpawnResult | null {
+  const bpOffsets = parseBlueprintOffsets();
+  if (bpOffsets.length === 0) return null;
+
+  // Precompute distance maps from each POI to all tiles
+  const distMaps: number[][] = [];
+  for (const poi of pois) {
+    distMaps.push(computeDistanceMap(roomName, poi.x, poi.y));
+  }
+
+  const terrain = Game.map.getRoomTerrain(roomName);
+  let best: SpawnResult | null = null;
+
+  // Scan every tile
+  for (let x = 1; x < 49; x++) {
+    for (let y = 1; y < 49; y++) {
+      if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+      if (!blueprintFits(terrain, x, y, bpOffsets)) continue;
+
+      const result = scorePosition(x, y, pois, distMaps);
+      if (!best || result.positionScore > best.positionScore) {
+        best = result;
+      }
+    }
+  }
+
+  return best;
 }
 
 /** Check if all blueprint offsets fit at the given spawn anchor */
@@ -144,67 +221,41 @@ function blueprintFits(
   return true;
 }
 
-// ── Travel cost computation ──
-
-function computeTravelCosts(
-  room: Room,
+/** Score a candidate spawn position from precomputed distance maps */
+function scorePosition(
   sx: number,
   sy: number,
   pois: POI[],
-): { sources: number[]; mineral: number; controller: number } {
-  const sourceCosts: number[] = [];
+  distMaps: number[][],
+): SpawnResult {
+  const sourcesCosts: number[] = [];
   let mineralCost = 0;
   let controllerCost = 0;
+  let positionScore = 0;
 
-  const start = new RoomPosition(sx, sy, room.name);
+  const tileIdx = sy * ROOM_SIZE + sx;
 
-  for (const poi of pois) {
-    const dest = new RoomPosition(poi.x, poi.y, room.name);
-    const cost = pathCost(start, dest, room);
-    if (poi.type === 'source') sourceCosts.push(cost);
-    else if (poi.type === 'mineral') mineralCost = cost;
-    else controllerCost = cost;
+  for (let i = 0; i < pois.length; i++) {
+    const poi = pois[i];
+    const d = distMaps[i][tileIdx];
+    if (d === Infinity) return { x: sx, y: sy, positionScore: -Infinity, travelCosts: { sources: [], mineral: 0, controller: 0 } };
+
+    if (poi.type === 'source') {
+      sourcesCosts.push(d);
+      positionScore -= d * SOURCE_TRAVEL_WEIGHT;
+    } else if (poi.type === 'mineral') {
+      mineralCost = d;
+      positionScore -= d * MINERAL_TRAVEL_WEIGHT;
+    } else {
+      controllerCost = d;
+      positionScore -= d * CONTROLLER_TRAVEL_WEIGHT;
+    }
   }
 
-  return { sources: sourceCosts, mineral: mineralCost, controller: controllerCost };
-}
-
-/**
- * Compute a swamp-aware travel cost from start to dest.
- * Uses PathFinder with swamp cost weighting for accuracy.
- * Returns a composite cost (plain tiles + swamp×SWAMP_COST).
- */
-function pathCost(start: RoomPosition, dest: RoomPosition, room: Room): number {
-  const result = PathFinder.search(start, { pos: dest, range: 1 }, {
-    roomCallback: (rn: string) => {
-      if (rn !== room.name) return false;
-      const costs = new PathFinder.CostMatrix();
-      const terrain = Game.map.getRoomTerrain(rn);
-      for (let x = 1; x < 49; x++) {
-        for (let y = 1; y < 49; y++) {
-          const t = terrain.get(x, y);
-          if (t === TERRAIN_MASK_WALL) costs.set(x, y, 255);
-          else if (t === TERRAIN_MASK_SWAMP) costs.set(x, y, SWAMP_COST);
-          else costs.set(x, y, 1);
-        }
-      }
-      return costs;
-    },
-    maxOps: 2000,
-  });
-
-  if (result.incomplete) return 50; // fallback estimate
-
-  // Sum path cost accounting for swamp weighting
-  let cost = 0;
-  for (let i = 1; i < result.path.length; i++) {
-    const p = result.path[i];
-    const t = Game.map.getRoomTerrain(room.name).get(p.x, p.y);
-    cost += t === TERRAIN_MASK_SWAMP ? SWAMP_COST : 1;
-  }
-  return cost;
-}
-
-function sum(arr: number[]): number {
-  return arr.reduce((a, b) => a + b, 0);
+  return {
+    x: sx,
+    y: sy,
+    positionScore,
+    travelCosts: { sources: sourcesCosts, mineral: mineralCost, controller: controllerCost },
+  };
 }
