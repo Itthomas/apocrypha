@@ -434,9 +434,8 @@ export function runSpawnManager(room: Room): void {
   // ── Colonization scouts (spawn before regular roles) ──
   if (trySpawnScout(room, spawns[0])) return;
 
-  // ── Colonization claimer / builders (spawn before regular roles) ──
+  // ── Colonization claimer (spawn before regular roles) ──
   if (trySpawnClaimer(room, spawns[0])) return;
-  if (trySpawnColonyBuilder(room, spawns[0])) return;
 
   // Try each role in priority order
   // Count source containers for hauler quota (1 per container)
@@ -514,4 +513,7 @@ export function runSpawnManager(room: Room): void {
       }
     }
   }
+
+  // ── Colonization builders (low priority — after regular roles) ──
+  if (trySpawnColonyBuilder(room, spawns[0])) return;
 }
