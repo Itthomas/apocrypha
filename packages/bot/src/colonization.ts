@@ -22,7 +22,7 @@ import { canFitBlueprint } from './colonization/scoring';
 
 const DEADLINE_TICKS = 3000;
 const COOLDOWN_TICKS = 10000;
-const SCOUT_GRID_RADIUS = 6;
+const SCOUT_GRID_RADIUS = 4;
 
 // ── Room name helpers ──
 
