@@ -62,14 +62,26 @@ const MIN_SOURCES = 2;
 
 /**
  * Score a room for colonization. Returns null if the room doesn't meet
- * minimum requirements (doesn't exist, fewer than MIN_SOURCES sources,
+ * minimum requirements (no room, no controller, fewer than MIN_SOURCES
+ * sources, controller is claimed when requireUnclaimed is true,
  * or blueprint doesn't fit anywhere).
+ *
+ * @param requireUnclaimed If true (default), rejects rooms where the
+ *   controller is already owned by any player.
  */
-export function scoreRoom(roomName: string): RoomScore | null {
+export function scoreRoom(roomName: string, requireUnclaimed: boolean = true): RoomScore | null {
   const room = Game.rooms[roomName];
   if (!room) return null;
 
   // ── Gate checks ──
+
+  // Always: room must have a controller
+  const controller = room.controller;
+  if (!controller) return null;
+
+  // Optional: controller must be unclaimed
+  if (requireUnclaimed && controller.owner) return null;
+
   const sources = room.find(FIND_SOURCES);
   if (sources.length < MIN_SOURCES) return null;
 
@@ -78,8 +90,7 @@ export function scoreRoom(roomName: string): RoomScore | null {
   for (const s of sources) pois.push({ type: 'source', x: s.pos.x, y: s.pos.y });
   const mineral = room.find(FIND_MINERALS)[0];
   if (mineral) pois.push({ type: 'mineral', x: mineral.pos.x, y: mineral.pos.y });
-  const controller = room.controller;
-  if (controller) pois.push({ type: 'controller', x: controller.pos.x, y: controller.pos.y });
+  pois.push({ type: 'controller', x: controller.pos.x, y: controller.pos.y });
 
   // Find optimal spawn position (exhaustive scan with position scoring)
   const result = findOptimalSpawn(room.name, pois);
