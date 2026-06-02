@@ -26,6 +26,13 @@ export function run(creep: Creep): boolean {
     return false;
   }
 
+  // ── Edge override: move toward room center if on the boundary ──
+  const pos = creep.pos;
+  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
+    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
+    return true;
+  }
+
   const roomName = creep.room.name;
 
   // ── Not in target room yet → route there ──
