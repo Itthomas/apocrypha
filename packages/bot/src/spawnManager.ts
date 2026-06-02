@@ -30,20 +30,22 @@ interface SpawnQuota {
  * Get spawn quotas for a room based on RCL.
  */
 function getQuotas(rcl: number): SpawnQuota[] {
-  // RCL 1-2: survivors + miner (gate handles container check)
+  // RCL 1-2: survivors + miner + hauler (gates handle spawn conditions)
   if (rcl <= 2) {
     return [
       { role: 'survivor', minimum: 2, maximum: 4 },
       { role: 'miner',    minimum: 0, maximum: 0 },
+      { role: 'hauler',   minimum: 0, maximum: 0 },
     ];
   }
 
-  // RCL 3-4: miner + survivors. Survivors handle all transport,
+  // RCL 3-4: miner + survivors + hauler. Survivors handle all transport,
   // building, and upgrading — pulling from miner containers.
-  // Miner max is source-based (computed dynamically in the spawn loop).
+  // Miner and hauler max are source-based (computed dynamically in the spawn loop).
   if (rcl >= 3 && rcl <= 4) {
     return [
       { role: 'miner',    minimum: 0, maximum: 0 },
+      { role: 'hauler',   minimum: 0, maximum: 0 },
       { role: 'survivor', minimum: 3, maximum: 8 },
     ];
   }
@@ -277,10 +279,7 @@ function spawnGate(role: string, room: Room): boolean {
     case 'builder':  return builderGate(room);
     case 'upgrader': return upgraderGate(room);
     case 'hauler': {
-      const containers = room.find(FIND_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_CONTAINER
-      });
-      return containers.length > 0;
+      return room.storage !== undefined;
     }
     default: return true;
   }
@@ -363,22 +362,27 @@ export function runSpawnManager(room: Room): void {
   if (trySpawnScout(room, spawns[0])) return;
 
   // Try each role in priority order
+  // Count source containers for hauler quota (1 per container)
+  const sourceContainers = room.find(FIND_SOURCES).reduce((count, source) => {
+    return count + source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    }).length;
+  }, 0);
+
   const sourceCount = room.find(FIND_SOURCES).length;
   for (const quota of quotas) {
     const current = creepCounts[quota.role] || 0;
 
-    // Miner and hauler max is one per source in the room
-    const effectiveMax = (quota.role === 'miner' || quota.role === 'hauler')
-      ? sourceCount
+    // Miner max is one per source. Hauler max is one per source container.
+    const effectiveMax = quota.role === 'miner' ? sourceCount
+      : quota.role === 'hauler' ? sourceContainers
       : quota.maximum;
 
     // Skip if at max
     if (current >= effectiveMax) continue;
 
-    // At RCL 1-2, survivors skip gate check (always allowed)
-    // At RCL 3+, gate applies when at or above minimum.
-    // Miner/hauler have minimum 0 so the gate always applies at RCL 3+.
-    if (rcl >= 3 && current >= quota.minimum) {
+    // Gate applies when at or above minimum (regardless of RCL)
+    if (current >= quota.minimum) {
       if (!spawnGate(quota.role, room)) continue;
     }
 
