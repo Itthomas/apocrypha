@@ -2,7 +2,7 @@
  * roles/miner.ts — Static miner creep logic
  *
  * Stands on the container next to a source and harvests continuously.
- * When carry is full, transfers to the container below (one tick overhead).
+ * Transfers and harvests in the same tick — no downtime.
  * When source is depleted, repairs the container and picks up dropped energy.
  * Never leaves its spot.
  */
@@ -85,18 +85,21 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // Harvest if carry has space
-  if (creep.store.getFreeCapacity() > 0) {
-    const result = creep.harvest(source);
-    if (result === OK) trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
+  // ── Harvest + transfer: both in the same tick ──
+  // Transfer first to free carry space, then harvest to refill.
+  // Screeps allows multiple independent actions per tick.
+  if (source.energy > 0) {
+    // Transfer any energy already in carry to the container below
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0 && container) {
+      creep.transfer(container, RESOURCE_ENERGY);
+    }
+    // Harvest to refill carry
+    if (creep.store.getFreeCapacity() > 0) {
+      const result = creep.harvest(source);
+      if (result === OK) trackHarvest(creep.room.name, creep.getActiveBodyparts(WORK) * 2);
+    }
     return true;
   }
 
-  // Carry full — transfer to container below
-  if (container) {
-    creep.transfer(container, RESOURCE_ENERGY);
-    return true;
-  }
-
-  return false;
+  // Source depleted — repair container, pick up dropped energy
 }
