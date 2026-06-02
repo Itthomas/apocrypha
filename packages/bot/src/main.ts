@@ -20,6 +20,7 @@ var roleColonyBuilder = require('role.colonyBuilder');
 var mantra = require('mantra');
 var tower = require('tower');
 var colonization = require('colonization');
+var libTravel = require('lib.travel');
 
 // Map role names to module run functions
 var roleModules: Record<string, any> | null = null;
@@ -56,10 +57,35 @@ export function loop(): void {
     console.log('[apocrypha] Colony online');
   }
 
-  // --- Cleanup dead creep memory (log before deleting) ---
+  // --- Cleanup dead creep memory + mark hostile rooms on death ---
   for (var name in Memory.creeps) {
     if (!(name in Game.creeps)) {
-      telemetry.logCreepDeath(name, Memory.creeps[name]);
+      var mem = Memory.creeps[name];
+      telemetry.logCreepDeath(name, mem);
+
+      // If a traveler died non-naturally in a hostile room, blacklist it
+      var role = mem.role as string | undefined;
+      if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder')) {
+        var spawnTick = mem.spawnTick as number | undefined;
+        var lastRoom = mem.lastRoom as string | undefined;
+        var diedNaturally = spawnTick ? (Game.time - spawnTick >= 1500) : false;
+        if (!diedNaturally && lastRoom) {
+          var room = Game.rooms[lastRoom];
+          if (room) {
+            var hostiles = room.find(FIND_HOSTILE_CREEPS);
+            if (hostiles.length === 0) hostiles = room.find(FIND_HOSTILE_STRUCTURES);
+            if (hostiles.length > 0) {
+              if (!Memory.hostileRooms) Memory.hostileRooms = {};
+              (Memory.hostileRooms as any)[lastRoom] = Game.time;
+            }
+          } else {
+            // No vision, but non-natural death is strong evidence — mark it
+            if (!Memory.hostileRooms) Memory.hostileRooms = {};
+            (Memory.hostileRooms as any)[lastRoom] = Game.time;
+          }
+        }
+      }
+
       delete Memory.creeps[name];
     }
   }

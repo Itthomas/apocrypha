@@ -314,6 +314,7 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
         targetRoom,
         sourceRoom: room.name,
         respawns: respawns + 1,
+        spawnTick: Game.time,
       }
     });
 
@@ -353,6 +354,7 @@ function trySpawnClaimer(room: Room, spawn: StructureSpawn): boolean {
       spawnY: ct.spawnY,
       claimed: false,
       sitePlaced: false,
+      spawnTick: Game.time,
     }
   });
 
@@ -392,6 +394,7 @@ function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
       upgrading: false,
       task: 0, // TASK.HARVEST
       taskLockedUntil: 0,
+      spawnTick: Game.time,
     }
   });
 
