@@ -338,6 +338,80 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
   return false;
 }
 
+// ── Colonization claimer spawning ──
+
+function trySpawnClaimer(room: Room, spawn: StructureSpawn): boolean {
+  const col = Memory.colonization as any;
+  if (col?.phase !== 'claiming') return false;
+
+  const ct = col.claimTarget;
+  if (!ct || room.name !== ct.sourceRoom) return false;
+
+  // Already have a claimer alive?
+  const claimers = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'claimer');
+  if (claimers.length > 0) return false;
+
+  const name = `claimer_${Game.time}`;
+  const result = spawn.spawnCreep([CLAIM, MOVE, MOVE], name, {
+    memory: {
+      role: 'claimer',
+      targetRoom: ct.room,
+      spawnX: ct.spawnX,
+      spawnY: ct.spawnY,
+      claimed: false,
+      sitePlaced: false,
+    }
+  });
+
+  if (result === OK) {
+    console.log(`[spawn] ${name} (claimer) → ${ct.room}`);
+    return true;
+  }
+
+  return false;
+}
+
+// ── Colonization builder spawning ──
+
+const COLONY_BUILDER_MAX = 3;
+
+function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
+  const col = Memory.colonization as any;
+  if (col?.phase !== 'building') return false;
+
+  const ct = col.claimTarget;
+  if (!ct || room.name !== ct.sourceRoom) return false;
+
+  const builders = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'colonyBuilder');
+  if (builders.length >= COLONY_BUILDER_MAX) return false;
+
+  const rcl = room.controller?.level ?? 0;
+  const body = getBody('survivor', rcl, room.energyAvailable, room.energyCapacityAvailable);
+  if (!body || body.length === 0) return false;
+
+  const name = `colBuilder_${Game.time}`;
+  const result = spawn.spawnCreep(body, name, {
+    memory: {
+      role: 'colonyBuilder',
+      targetRoom: ct.room,
+      harvesting: true,
+      building: false,
+      upgrading: false,
+      task: 0, // TASK.HARVEST
+      taskLockedUntil: 0,
+    }
+  });
+
+  if (result === OK) {
+    const cost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);
+    trackSpawnSpend(room.name, cost);
+    console.log(`[spawn] ${name} (colonyBuilder) → ${ct.room} cost=${cost}e`);
+    return true;
+  }
+
+  return false;
+}
+
 // ── Spawn Manager ──
 
 /** Run spawn logic for one room. Call once per tick. */
@@ -360,6 +434,10 @@ export function runSpawnManager(room: Room): void {
 
   // ── Colonization scouts (spawn before regular roles) ──
   if (trySpawnScout(room, spawns[0])) return;
+
+  // ── Colonization claimer / builders (spawn before regular roles) ──
+  if (trySpawnClaimer(room, spawns[0])) return;
+  if (trySpawnColonyBuilder(room, spawns[0])) return;
 
   // Try each role in priority order
   // Count source containers for hauler quota (1 per container)

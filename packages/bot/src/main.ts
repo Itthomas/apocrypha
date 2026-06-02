@@ -15,6 +15,8 @@ var roleBuilder = require('role.builder');
 var roleUpgrader = require('role.upgrader');
 var roleSurvivor = require('role.survivor');
 var roleScout = require('role.scout');
+var roleClaimer = require('role.claimer');
+var roleColonyBuilder = require('role.colonyBuilder');
 var mantra = require('mantra');
 var tower = require('tower');
 var colonization = require('colonization');
@@ -31,6 +33,8 @@ function getRoleModule(role: string) {
       'upgrader': roleUpgrader,
       'survivor': roleSurvivor,
       'scout': roleScout,
+      'claimer': roleClaimer,
+      'colonyBuilder': roleColonyBuilder,
     };
   }
   return roleModules[role] || null;
@@ -85,7 +89,7 @@ export function loop(): void {
 
     // Emergency: if no miners, non-hauler creeps harvest to keep colony alive.
     // Haulers are skipped — they have no WORK parts and rely on container withdrawal.
-    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && countMiners(creep.room) === 0) {
+    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && countMiners(creep.room) === 0) {
       roleSurvivor.run(creep);
       continue;
     }
@@ -98,7 +102,7 @@ export function loop(): void {
     
     // If role couldn't find work, harvest as fallback.
     // Scouts are excluded — they either explore or stand still.
-    if (!acted && role !== 'miner' && role !== 'scout') {
+    if (!acted && role !== 'miner' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder') {
       roleSurvivor.run(creep);
     }
   }

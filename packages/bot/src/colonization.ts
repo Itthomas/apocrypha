@@ -1,17 +1,19 @@
 /**
  * colonization.ts — Global colonization orchestrator
  *
- * Runs every tick from main. Triggers colonization waves when:
- *   1. ownedRooms < GCL level (can claim more rooms)
- *   2. At least one room is RCL 5+
- *   3. Not in cooldown
+ * Phases: scouting → claiming → building → complete
  *
- * 8 scouts are spawned radially — each targets a room on a 9×9 square
- * centered on the spawn room. Scouts transit to their target via moveTo,
- * then switch to visited-filtered random walk exploration. Shared
- * Memory.colonization.roomsVisited prevents overlap. Scoring runs on
- * every room entered (both phases). On deadline expiry, picks the best
- * scored candidate and triggers the claimer phase (TODO).
+ * Scouting: 8 scouts explore a 5×5 grid around spawn. Shared
+ *   roomsVisited prevents overlap. Best scored room saved.
+ *
+ * Claiming: spawn a claimer creep to claim the controller and
+ *   place the spawn construction site.
+ *
+ * Building: spawn colony-builder creeps that travel to the target
+ *   room and run survivor behavior to build the spawn.
+ *
+ * Complete: source room stops sending builders. Existing builders
+ *   finish their natural lives. Cooldown prevents immediate re-wave.
  */
 
 const DEADLINE_TICKS = 3000;
@@ -41,25 +43,57 @@ function roomName(x: number, y: number): string {
 }
 
 export function runColonization(): void {
-  const col = Memory.colonization;
+  const col = Memory.colonization as any;
 
   // ── Cooldown active ──
   if (col?.cooldownUntil && Game.time < col.cooldownUntil) return;
 
-  // ── Active wave — check deadline expiry ──
-  if (col?.active) {
+  // ── Phase: complete (just waiting out cooldown) ──
+  if (col?.phase === 'complete') return;
+
+  // ── Phase: building — check if spawn is built in target room ──
+  if (col?.phase === 'building') {
+    const targetRoom = Game.rooms[col.claimTarget?.room];
+    if (targetRoom) {
+      const spawns = targetRoom.find(FIND_MY_SPAWNS);
+      if (spawns.length > 0) {
+        col.phase = 'complete';
+        col.cooldownUntil = Game.time + COOLDOWN_TICKS;
+        console.log(`[colonization] ✓ Spawn built in ${col.claimTarget.room} — phase complete`);
+        return;
+      }
+    }
+    return;
+  }
+
+  // ── Phase: claiming — check if claimer has placed spawn site ──
+  if (col?.phase === 'claiming') {
+    const targetRoom = Game.rooms[col.claimTarget?.room];
+    if (targetRoom) {
+      const sites = targetRoom.find(FIND_MY_CONSTRUCTION_SITES);
+      if (sites.length > 0) {
+        col.phase = 'building';
+        console.log(`[colonization] Spawn site placed in ${col.claimTarget.room} — phase building`);
+        return;
+      }
+    }
+    return;
+  }
+
+  // ── Scouting: active wave — check deadline expiry ──
+  if (col?.active && !col?.phase) {
     if (Game.time >= col.deadline) finishWave();
     return;
   }
 
-  // ── Trigger conditions ──
+  // ── Trigger conditions for new scouting wave ──
   const ownedRooms = countOwnedRooms();
   if (ownedRooms >= Game.gcl.level) return;
 
   const spawnRoom = findRcl5Room();
   if (!spawnRoom) return;
 
-  // ── Start new colonization wave ──
+  // ── Start new scouting wave ──
   const [sx, sy] = parseRoomXY(spawnRoom.name);
   const scoutTargets = SCOUT_OFFSETS.map(([dx, dy]) => roomName(sx + dx, sy + dy));
 
@@ -108,28 +142,42 @@ function findRcl5Room(): Room | null {
 // ── Wave completion ──
 
 function finishWave(): void {
-  const col = Memory.colonization;
+  const col = Memory.colonization as any;
   if (!col) return;
-
-  col.active = false;
 
   const best = col.bestRoom;
   if (!best) {
     col.cooldownUntil = Game.time + COOLDOWN_TICKS;
+    delete col.active;
     return;
   }
 
-  // Validate minimum threshold
   const candidate = col.candidates[best.name];
   if (!candidate || candidate.sources < 2) {
     col.cooldownUntil = Game.time + COOLDOWN_TICKS;
+    delete col.active;
     return;
   }
 
-  // ── Best room valid — claimer phase ──
-  // TODO: spawn CLAIM creep from nearest RCL 5+ room, send to best.name,
-  //       build spawn, bootstrap.
+  // ── Best room valid — transition to claimer phase ──
+  const sourceRoom = findRcl5Room();
+  if (!sourceRoom) {
+    col.cooldownUntil = Game.time + COOLDOWN_TICKS;
+    delete col.active;
+    return;
+  }
 
-  // For now, just cooldown
-  col.cooldownUntil = Game.time + COOLDOWN_TICKS;
+  col.phase = 'claiming';
+  col.active = true;
+  delete col.scoutState;
+  delete col.scoutTargets;
+  col.claimTarget = {
+    room: best.name,
+    spawnX: best.worldX,
+    spawnY: best.worldY,
+    sourceRoom: sourceRoom.name,
+  };
+  col.bestRoom = best;
+
+  console.log(`[colonization] Scouting complete — claiming ${best.name} (score ${best.score}) from ${sourceRoom.name}`);
 }
