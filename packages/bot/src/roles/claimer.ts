@@ -1,10 +1,12 @@
 /**
  * roles/claimer.ts — Colonization claimer creep
  *
- * Spawned when phase changes to 'claiming'. Travels to target room,
- * claims the controller, places a spawn construction site at the
- * precomputed optimal position, then helps build it.
+ * Spawned when phase changes to 'claiming'. Travels to target room via
+ * findRoute exit-by-exit routing, claims the controller, places a spawn
+ * construction site at the precomputed optimal position, then helps build it.
  */
+
+import { travelToRoom } from '../lib/travel';
 
 interface ClaimerMemory {
   role: 'claimer';
@@ -13,16 +15,16 @@ interface ClaimerMemory {
   spawnY: number;
   claimed: boolean;
   sitePlaced: boolean;
+  route?: Array<{ exit: ExitConstant; room: string }>;
+  routeRoom?: string;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as ClaimerMemory;
 
-  const roomName = creep.room.name;
-
-  // ── Not in target room yet → move there ──
-  if (roomName !== mem.targetRoom) {
-    creep.moveTo(new RoomPosition(25, 25, mem.targetRoom), { reusePath: 50 });
+  // ── Not in target room yet → route there ──
+  if (creep.room.name !== mem.targetRoom) {
+    travelToRoom(creep, mem.targetRoom);
     return true;
   }
 
@@ -38,20 +40,20 @@ export function run(creep: Creep): boolean {
       creep.moveTo(controller);
     } else if (result === OK) {
       mem.claimed = true;
-      console.log(`[claimer] Controller claimed in ${roomName}`);
+      console.log(`[claimer] Controller claimed in ${creep.room.name}`);
     }
     return true;
   }
 
   // Step 2: Place spawn construction site at optimal position
   if (!mem.sitePlaced) {
-    const pos = new RoomPosition(mem.spawnX, mem.spawnY, roomName);
+    const pos = new RoomPosition(mem.spawnX, mem.spawnY, creep.room.name);
     const result = creep.room.createConstructionSite(pos, STRUCTURE_SPAWN);
     if (result === ERR_NOT_IN_RANGE) {
       creep.moveTo(pos);
     } else if (result === OK) {
       mem.sitePlaced = true;
-      console.log(`[claimer] Spawn site placed at (${mem.spawnX},${mem.spawnY}) in ${roomName}`);
+      console.log(`[claimer] Spawn site placed at (${mem.spawnX},${mem.spawnY}) in ${creep.room.name}`);
     }
     return true;
   }

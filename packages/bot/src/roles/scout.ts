@@ -1,8 +1,8 @@
 /**
  * roles/scout.ts — Colonization scout (two-phase)
  *
- * Phase 1 (Transit): creep.moveTo(center of targetRoom) — built-in
- *   pathfinder handles all inter-room exit routing. No manual steering.
+ * Phase 1 (Transit): travelToRoom using Game.map.findRoute exit-by-exit
+ *   routing. No manual steering, no cross-room moveTo edge failures.
  *
  * Phase 2 (Explore): visited-filtered random walk. On each room entry,
  *   picks a random exit from those leading to unvisited rooms. Falls
@@ -16,6 +16,7 @@
  */
 
 import { scoreRoom } from '../colonization/scoring';
+import { travelToRoom } from '../lib/travel';
 
 interface ScoutMemory {
   role: 'scout';
@@ -23,9 +24,10 @@ interface ScoutMemory {
   phase: 'transit' | 'explore';
   sourceRoom: string;
   respawns: number;
-  prevRoom: string;
   chosenExit: number;
   lastRoom: string;
+  route?: Array<{ exit: ExitConstant; room: string }>;
+  routeRoom?: string;
 }
 
 type ExitDirConst = 1 | 3 | 5 | 7;
@@ -70,13 +72,12 @@ export function run(creep: Creep): boolean {
     }
   }
 
-  // ── Transit phase: moveTo center of target room ──
+  // ── Transit phase: findRoute → exit-by-exit travel ──
   if (mem.phase === 'transit') {
     if (roomName === mem.targetRoom) {
       mem.phase = 'explore';
     } else {
-      creep.moveTo(new RoomPosition(25, 25, mem.targetRoom), { reusePath: 50 });
-      mem.prevRoom = roomName;
+      travelToRoom(creep, mem.targetRoom);
       return true;
     }
   }
@@ -96,7 +97,6 @@ export function run(creep: Creep): boolean {
     }
   }
 
-  mem.prevRoom = roomName;
   return true;
 }
 

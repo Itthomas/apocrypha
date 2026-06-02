@@ -1,28 +1,31 @@
 /**
  * roles/colonyBuilder.ts — Colonization builder creep
  *
- * Spawned during the 'building' phase. Travels to the target room,
- * then delegates to survivor.run() for normal operation. The spawn
- * site is the only construction target, so TASK.BUILD handles it
- * as part of normal survivor behavior.
+ * Spawned during the 'building' phase. Travels to the target room via
+ * findRoute exit-by-exit routing, then delegates to survivor.run() for
+ * normal operation. The spawn site is the only construction target, so
+ * TASK.BUILD handles it as part of normal survivor behavior.
  *
  * When the phase completes, these creeps continue as survivors
  * in the new colony until they die naturally.
  */
 
+import { travelToRoom } from '../lib/travel';
 import { run as survivorRun } from './survivor';
 
 interface ColonyBuilderMemory {
   role: 'colonyBuilder';
   targetRoom: string;
+  route?: Array<{ exit: ExitConstant; room: string }>;
+  routeRoom?: string;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as ColonyBuilderMemory;
 
-  // ── Not in target room yet → move there ──
+  // ── Not in target room yet → route there ──
   if (creep.room.name !== mem.targetRoom) {
-    creep.moveTo(new RoomPosition(25, 25, mem.targetRoom), { reusePath: 50 });
+    travelToRoom(creep, mem.targetRoom);
     return true;
   }
 

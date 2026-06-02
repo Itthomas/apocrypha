@@ -40,6 +40,7 @@ const modules = {
   'colonization':         'colonization.ts',
   'role.scout':           'roles/scout.ts',
   'colonization.scoring': 'colonization/scoring.ts',
+  'lib.travel':           'lib/travel.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)
