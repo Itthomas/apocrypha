@@ -48,8 +48,14 @@ export function runColonization(): void {
   // ── Cooldown active ──
   if (col?.cooldownUntil && Game.time < col.cooldownUntil) return;
 
-  // ── Phase: complete (just waiting out cooldown) ──
-  if (col?.phase === 'complete') return;
+  // ── Phase: complete — clean up after cooldown expires ──
+  if (col?.phase === 'complete') {
+    if (Game.time >= col.cooldownUntil) {
+      console.log(`[colonization] Cooldown expired — cycle complete, cleaning up`);
+      delete (Memory as any).colonization;
+    }
+    return;
+  }
 
   // ── Phase: building — check if spawn is built in target room ──
   if (col?.phase === 'building') {
