@@ -76,7 +76,7 @@ export function travelToRoom(creep: Creep, targetRoom: string): boolean {
 
   // Compute or reuse route
   if (!mem.route || mem.route.length === 0) {
-    const route = Game.map.findRoute(creep.room, targetRoom, {
+    const route = Game.map.findRoute(creep.room.name, targetRoom, {
       routeCallback(roomName) {
         // Avoid rooms known to be hostile
         if (isHostile(roomName)) return Infinity;
