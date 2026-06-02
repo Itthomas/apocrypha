@@ -58,7 +58,17 @@ export function run(creep: Creep): boolean {
   // ── Score every new room (both phases) ──
   if (col.roomsVisited.indexOf(roomName) === -1) {
     col.roomsVisited.push(roomName);
-    const result = scoreRoom(roomName);
+    let result: any = null;
+    try {
+      result = scoreRoom(roomName);
+    } catch (e: any) {
+      if (!Memory._scoringErrors) (Memory as any)._scoringErrors = {};
+      (Memory as any)._scoringErrors[roomName] = {
+        tick: Game.time,
+        error: String(e),
+        stack: e.stack ? String(e.stack) : undefined,
+      };
+    }
     if (result && result.score > 0) {
       col.candidates[roomName] = result;
       if (!col.bestRoom || result.score > col.bestRoom.score) {
