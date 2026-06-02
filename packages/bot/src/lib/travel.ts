@@ -57,6 +57,14 @@ export function travelToRoom(creep: Creep, targetRoom: string): boolean {
   // Already there
   if (creep.room.name === targetRoom) return false;
 
+  // ── Edge override: move toward room center if on the boundary ──
+  // Prevents blinking when entering a new room (creep lands on exit tile).
+  const pos = creep.pos;
+  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
+    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
+    return true;
+  }
+
   // Check for hostiles in current room
   markHostileIfNeeded(creep);
 
