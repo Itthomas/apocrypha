@@ -39,23 +39,22 @@ function getQuotas(rcl: number): SpawnQuota[] {
     ];
   }
 
-  // RCL 3-4: miner + survivors + hauler. Survivors handle all transport,
-  // building, and upgrading — pulling from miner containers.
+  // RCL 3-4: survivors first, then miner + hauler.
   // Miner and hauler max are source-based (computed dynamically in the spawn loop).
   if (rcl >= 3 && rcl <= 4) {
     return [
+      { role: 'survivor', minimum: 3, maximum: 8 },
       { role: 'miner',    minimum: 0, maximum: 0 },
       { role: 'hauler',   minimum: 0, maximum: 0 },
-      { role: 'survivor', minimum: 3, maximum: 8 },
     ];
   }
 
   // RCL 5+: specialized roles, survivors as backup.
   // Miner and hauler max are source-based.
   const quotas: SpawnQuota[] = [
+    { role: 'survivor', minimum: 0, maximum: 8 },
     { role: 'miner',    minimum: 0, maximum: 0 },
     { role: 'hauler',   minimum: 0, maximum: 0 },
-    { role: 'survivor', minimum: 0, maximum: 8 },
     { role: 'builder',  minimum: 0, maximum: 2 },
     { role: 'upgrader', minimum: 0, maximum: 2 },
   ];
@@ -431,13 +430,7 @@ export function runSpawnManager(room: Room): void {
     creepCounts[role] = (creepCounts[role] || 0) + 1;
   }
 
-  // ── Colonization scouts (spawn before regular roles) ──
-  if (trySpawnScout(room, spawns[0])) return;
-
-  // ── Colonization claimer (spawn before regular roles) ──
-  if (trySpawnClaimer(room, spawns[0])) return;
-
-  // Try each role in priority order
+  // ── Regular roles (priority: survivor → miner → hauler → builder → upgrader) ──
   // Count source containers for hauler quota (1 per container)
   const sourceContainers = room.find(FIND_SOURCES).reduce((count, source) => {
     return count + source.pos.findInRange(FIND_STRUCTURES, 1, {
@@ -514,6 +507,12 @@ export function runSpawnManager(room: Room): void {
     }
   }
 
-  // ── Colonization builders (low priority — after regular roles) ──
+  // ── Colonization scouts (after regular roles, before claimer) ──
+  if (trySpawnScout(room, spawns[0])) return;
+
+  // ── Colonization claimer ──
+  if (trySpawnClaimer(room, spawns[0])) return;
+
+  // ── Colonization builders (lowest priority) ──
   if (trySpawnColonyBuilder(room, spawns[0])) return;
 }
