@@ -96,6 +96,7 @@ export function loop(): void {
     if (room.controller && room.controller.my) {
       constructionPlanner.runConstructionPlanner(room);
       tower.runTowers(room);
+      mantra.run(room);
     }
   }
 
@@ -143,5 +144,5 @@ export function loop(): void {
   colonization.runColonization();
 
   // --- Mantra ---
-  mantra.run();
+  // (runs per-room in the construction loop above)
 }

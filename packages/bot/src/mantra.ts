@@ -1,79 +1,58 @@
 /**
- * mantle.ts — Miraak's Mantra recitation
+ * mantle.ts — Miraak's Mantra recitation (per-room)
  *
- * One creep recites ALL fragments of one complete line,
- * then the next creep recites the next line.
- * Cycles through all creeps and all 16 lines.
+ * One creep per room recites ALL fragments of one complete line,
+ * then the next creep in that room recites the next line.
+ * Cycles through all creeps in the room and all 16 lines.
  *
  * Fragments are ≤10 characters, split at word boundaries.
  */
 
-// Each line is an array of fragments
 const LINES: string[][] = [
-  // 1. Here in his shrine
   ['Here in', 'his shrine'],
-  // 2. That they have forgotten
   ['That they', 'have', 'forgotten'],
-  // 3. Here do we toil
   ['Here do we', 'toil'],
-  // 4. That we might remember
   ['That we', 'might', 'remember'],
-  // 5. By night we reclaim
   ['By night', 'we reclaim'],
-  // 6. What by day was stolen
   ['What by', 'day was', 'stolen'],
-  // 7. Far from ourselves
   ['Far from', 'ourselves'],
-  // 8. He grows ever near to us
   ['He grows', 'ever near', 'to us'],
-  // 9. Our eyes once were blinded
   ['Our eyes', 'once were', 'blinded'],
-  // 10. Now through him do we see
   ['Now', 'through', 'him do we', 'see'],
-  // 11. Our hands once were idle
   ['Our hands', 'once were', 'idle'],
-  // 12. Now through them does he speak
   ['Now', 'through', 'them does', 'he speak'],
-  // 13. And when the world shall listen
   ['And when', 'the world', 'shall', 'listen'],
-  // 14. And when the world shall see
   ['And when', 'the world', 'shall see'],
-  // 15. And when the world remembers
   ['And when', 'the world', 'remembers'],
-  // 16. That world shall cease to be
   ['That world', 'shall', 'cease to', 'be'],
 ];
 
 interface MantraState {
-  /** Which line (0-15) is being recited */
   lineIndex: number;
-  /** Which fragment within the current line */
   fragmentIndex: number;
 }
 
-export function run(): void {
-  // Detect old format (only had fragmentIndex) or first run
-  if (!Memory.mantra || Memory.mantra.lineIndex === undefined) {
-    Memory.mantra = { lineIndex: 0, fragmentIndex: 0 };
+export function run(room: Room): void {
+  // Only in our rooms
+  if (!room.controller?.my) return;
+
+  const creeps = room.find(FIND_MY_CREEPS);
+  if (creeps.length === 0) return;
+
+  // Per-room state
+  if (!Memory.rooms[room.name]) (Memory.rooms[room.name] as any) = {};
+  if (!(Memory.rooms[room.name] as any).mantra) {
+    (Memory.rooms[room.name] as any).mantra = { lineIndex: 0, fragmentIndex: 0 };
   }
+  const state = (Memory.rooms[room.name] as any).mantra as MantraState;
 
-  const state = Memory.mantra as MantraState;
-  const creepNames = Object.keys(Game.creeps);
-  if (creepNames.length === 0) return;
-
-  // Pick the creep for the current line (cycles through creeps)
-  const creep = Game.creeps[creepNames[state.lineIndex % creepNames.length]];
+  const creep = creeps[state.lineIndex % creeps.length];
   const line = LINES[state.lineIndex % LINES.length];
   const fragment = line[state.fragmentIndex];
 
-  if (creep) {
-    creep.say(fragment);
-  }
+  creep.say(fragment);
 
-  // Advance fragment
   state.fragmentIndex++;
-
-  // If line is complete, advance to next line (and next creep)
   if (state.fragmentIndex >= line.length) {
     state.fragmentIndex = 0;
     state.lineIndex = (state.lineIndex + 1) % LINES.length;
