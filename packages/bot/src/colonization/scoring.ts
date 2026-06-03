@@ -99,6 +99,19 @@ export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, re
   const result = findOptimalSpawn(room.name, pois);
   if (!result) return reject(roomName, 'no_spawn_pos');
 
+  // If all positions are unreachable, trace which POI is walled off
+  if (result.positionScore === -Infinity) {
+    const dmaps: number[][] = [];
+    for (const poi of pois) dmaps.push(computeDistanceMap(room.name, poi.x, poi.y));
+    const ti = result.y * ROOM_SIZE + result.x;
+    for (let i = 0; i < pois.length; i++) {
+      if (dmaps[i][ti] === Infinity) {
+        reject(roomName, 'unreachable:' + pois[i].type + '@' + pois[i].x + ',' + pois[i].y);
+        break;
+      }
+    }
+  }
+
   // Room-level score: position score + source count bonus
   let roomScore = result.positionScore + sources.length * SOURCE_COUNT_BONUS;
 
