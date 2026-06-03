@@ -312,6 +312,13 @@ function doHarvest(creep: Creep): boolean {
 
   // 1+ miners → containers are being refilled, pull from them
   if (miners.length > 0) {
+    // Don't stand on a miner's container — step toward spawn to get off it
+    if (isOnSourceContainer(creep)) {
+      const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+      if (spawn) creep.moveTo(spawn);
+      return true;
+    }
+
     // Prefer a container that can fully fill the survivor's carry
     const container = getSourceContainer(creep, creep.store.getFreeCapacity());
     if (container) {
@@ -355,6 +362,20 @@ function doHarvest(creep: Creep): boolean {
     }
   }
   return true;
+}
+
+/** Check if the creep is standing on a source container (miner's spot) */
+function isOnSourceContainer(creep: Creep): boolean {
+  const sources = creep.room.find(FIND_SOURCES);
+  for (const source of sources) {
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 2, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+    for (const c of containers) {
+      if (creep.pos.isEqualTo(c.pos)) return true;
+    }
+  }
+  return false;
 }
 
 /** Find the nearest source container with ≥ minEnergy (default 100).
