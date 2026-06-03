@@ -100,12 +100,16 @@ export function runColonization(): void {
   // ── Start new scouting wave ──
   const [sx, sy] = parseRoomXY(spawnRoom.name);
 
-  // Generate ±6 grid and pre-screen for blueprint viability
+  // Generate ±grid and pre-screen for blueprint viability
   const eligibleRooms: string[] = [];
+  const owned = getOwnedRoomNames();
   for (let dx = -SCOUT_GRID_RADIUS; dx <= SCOUT_GRID_RADIUS; dx++) {
     for (let dy = -SCOUT_GRID_RADIUS; dy <= SCOUT_GRID_RADIUS; dy++) {
-      const name = roomName(sx + dx, sy + dy);
-      if (name === spawnRoom.name) continue; // skip source room
+      const rx = sx + dx, ry = sy + dy;
+      const name = roomName(rx, ry);
+      if (name === spawnRoom.name) continue;
+      if (isHighwayOrCenter(rx, ry)) continue;
+      if (owned.has(name)) continue;
       try {
         if (canFitBlueprint(name)) {
           eligibleRooms.push(name);
@@ -146,6 +150,27 @@ export function runColonization(): void {
 }
 
 // ── Helpers ──
+
+/** Check if a room is a highway (x or y % 10 == 0) or sector center (x and y within ±1 of %10==5) */
+function isHighwayOrCenter(x: number, y: number): boolean {
+  const ax = Math.abs(x), ay = Math.abs(y);
+  // Highways: rooms where x % 10 == 0 or y % 10 == 0
+  if (ax % 10 === 0 || ay % 10 === 0) return true;
+  // Sector center: the 9 rooms centered on (x%10==5, y%10==5)
+  const rx = ax % 10, ry = ay % 10;
+  if (rx >= 4 && rx <= 6 && ry >= 4 && ry <= 6) return true;
+  return false;
+}
+
+/** Collect names of rooms we already control */
+function getOwnedRoomNames(): Set<string> {
+  const owned = new Set<string>();
+  for (const _rn in Game.rooms) {
+    const room = Game.rooms[_rn];
+    if (room.controller?.my) owned.add(room.name);
+  }
+  return owned;
+}
 
 function countOwnedRooms(): number {
   let count = 0;
