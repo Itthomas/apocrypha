@@ -108,6 +108,7 @@ function runEconomyTracker(room: Room): void {
   const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
   if (miners.length === 0) return;
 
+  if (!Memory.rooms) (Memory as any).rooms = {};
   if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
   if (!Memory.rooms[room.name].economy) {
     Memory.rooms[room.name].economy = { samples: [], softCap: 8, nextSample: Game.time };
@@ -458,6 +459,7 @@ export function runSpawnManager(room: Room): void {
     }
 
     // ── Spawn cooldown: wait if full-capacity body is better than what's available now ──
+    if (!Memory.rooms) (Memory as any).rooms = {};
     if (!Memory.rooms[room.name] || !Memory.rooms[room.name].spawnCooldowns) Memory.rooms[room.name].spawnCooldowns = {};
     const cooldown = Memory.rooms[room.name].spawnCooldowns;
     const role = quota.role;

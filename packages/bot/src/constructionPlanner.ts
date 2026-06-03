@@ -412,6 +412,7 @@ export function runConstructionPlanner(room: Room): void {
   const rcl = room.controller?.level ?? 0;
 
   // Init
+  if (!Memory.rooms) (Memory as any).rooms = {};
   if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
   if (!Memory.rooms[room.name].planner) (Memory.rooms[room.name] as any).planner = { rcl: 0, batch: 0, batchPlaced: false };
   const planner = (Memory.rooms[room.name] as any).planner as PlannerMemory;
