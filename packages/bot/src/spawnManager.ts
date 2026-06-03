@@ -273,8 +273,7 @@ function spawnGate(role: string, room: Room): boolean {
 
   switch (role) {
     case 'survivor': {
-      const rcl = room.controller?.level ?? 0;
-      return rcl >= 5 ? survivorGateRcl5(room) : survivorGateRcl3(room);
+      return room.storage ? survivorGateRcl5(room) : survivorGateRcl3(room);
     }
     case 'miner':   return minerGate(room);
     case 'builder':  return builderGate(room);
