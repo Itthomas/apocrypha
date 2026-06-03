@@ -108,10 +108,11 @@ function runEconomyTracker(room: Room): void {
   const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
   if (miners.length === 0) return;
 
-  if (!Memory.economy) {
-    Memory.economy = { samples: [], softCap: 8, nextSample: Game.time };
+  if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
+  if (!Memory.rooms[room.name].economy) {
+    Memory.rooms[room.name].economy = { samples: [], softCap: 8, nextSample: Game.time };
   }
-  const econ = Memory.economy as EconomyMemory;
+  const econ = (Memory.rooms[room.name] as any).economy as EconomyMemory;
 
   // Sample max container energy every ECO_SAMPLE_INTERVAL ticks
   if (Game.time >= econ.nextSample) {
@@ -149,7 +150,7 @@ function runEconomyTracker(room: Room): void {
 function survivorGateRcl3(room: Room): boolean {
   // Soft cap from economy tracker — don't spawn beyond what the
   // container buffer can sustain
-  const econ = Memory.economy as EconomyMemory | undefined;
+  const econ = (Memory.rooms[room.name] as any).economy as EconomyMemory | undefined;
   const survivorCount = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'survivor').length;
   if (econ && survivorCount >= econ.softCap) return false;
 
@@ -457,8 +458,8 @@ export function runSpawnManager(room: Room): void {
     }
 
     // ── Spawn cooldown: wait if full-capacity body is better than what's available now ──
-    if (!Memory.spawnCooldowns) Memory.spawnCooldowns = {};
-    const cooldown = Memory.spawnCooldowns;
+    if (!Memory.rooms[room.name] || !Memory.rooms[room.name].spawnCooldowns) Memory.rooms[room.name].spawnCooldowns = {};
+    const cooldown = Memory.rooms[room.name].spawnCooldowns;
     const role = quota.role;
 
     // Cooldown active → skip this role

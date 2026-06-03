@@ -332,8 +332,8 @@ function placeStaticBatch(room: Room, spawn: StructureSpawn, entries: BlueprintE
 }
 
 /** Check if all construction sites from the current batch are built */
-function batchComplete(room: Room): boolean {
-  return Memory.planner.batchPlaced && room.find(FIND_CONSTRUCTION_SITES).length === 0;
+function batchComplete(room: Room, planner: PlannerMemory): boolean {
+  return planner.batchPlaced && room.find(FIND_CONSTRUCTION_SITES).length === 0;
 }
 
 // ── Repair Scan ──
@@ -344,16 +344,16 @@ function batchComplete(room: Room): boolean {
  * construction sites for all of them and stop. Returns true if any sites
  * were placed.
  */
-function runRepairScan(room: Room, spawn: StructureSpawn, rcl: number): boolean {
+function runRepairScan(room: Room, spawn: StructureSpawn, rcl: number, planner: PlannerMemory): boolean {
   // Init scan position
-  if (Memory.planner.repairRcl === undefined) {
-    Memory.planner.repairRcl = 1;
-    Memory.planner.repairBatch = 0;
+  if (planner.repairRcl === undefined) {
+    planner.repairRcl = 1;
+    planner.repairBatch = 0;
   }
 
-  for (let scanRcl = Memory.planner.repairRcl; scanRcl <= rcl; scanRcl++) {
+  for (let scanRcl = planner.repairRcl; scanRcl <= rcl; scanRcl++) {
     const batches = getBatches(scanRcl);
-    const startBatch = scanRcl === Memory.planner.repairRcl ? Memory.planner.repairBatch : 0;
+    const startBatch = scanRcl === planner.repairRcl ? planner.repairBatch : 0;
 
     for (let b = startBatch; b < batches.length; b++) {
       const batch = batches[b];
@@ -380,16 +380,16 @@ function runRepairScan(room: Room, spawn: StructureSpawn, rcl: number): boolean 
 
       if (placed > 0) {
         // Advance scan position past this batch for next time
-        Memory.planner.repairRcl = scanRcl;
-        Memory.planner.repairBatch = b + 1;
-        if (Memory.planner.repairBatch >= batches.length) {
-          Memory.planner.repairRcl = scanRcl + 1;
-          Memory.planner.repairBatch = 0;
+        planner.repairRcl = scanRcl;
+        planner.repairBatch = b + 1;
+        if (planner.repairBatch >= batches.length) {
+          planner.repairRcl = scanRcl + 1;
+          planner.repairBatch = 0;
         }
         // Reset to start if we've scanned past current RCL
-        if (Memory.planner.repairRcl > rcl) {
-          Memory.planner.repairRcl = 1;
-          Memory.planner.repairBatch = 0;
+        if (planner.repairRcl > rcl) {
+          planner.repairRcl = 1;
+          planner.repairBatch = 0;
         }
         console.log(`[planner] repair RCL${scanRcl} ${batch.label}: ${placed} sites replaced`);
         return true;
@@ -398,8 +398,8 @@ function runRepairScan(room: Room, spawn: StructureSpawn, rcl: number): boolean 
   }
 
   // Full scan complete — reset for next cycle
-  Memory.planner.repairRcl = 1;
-  Memory.planner.repairBatch = 0;
+  planner.repairRcl = 1;
+  planner.repairBatch = 0;
   return false;
 }
 
@@ -412,50 +412,52 @@ export function runConstructionPlanner(room: Room): void {
   const rcl = room.controller?.level ?? 0;
 
   // Init
-  if (!Memory.planner) Memory.planner = { rcl: 0, batch: 0, batchPlaced: false };
+  if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
+  if (!Memory.rooms[room.name].planner) (Memory.rooms[room.name] as any).planner = { rcl: 0, batch: 0, batchPlaced: false };
+  const planner = (Memory.rooms[room.name] as any).planner as PlannerMemory;
 
   // RCL changed → reset
-  if (Memory.planner.rcl !== rcl) {
-    Memory.planner.rcl = rcl;
-    Memory.planner.batch = 0;
-    Memory.planner.batchPlaced = false;
-    console.log(`[planner] RCL ${rcl} — ${getBatches(rcl).length} batches queued`);
+  if (planner.rcl !== rcl) {
+    planner.rcl = rcl;
+    planner.batch = 0;
+    planner.batchPlaced = false;
+    console.log(`[planner] ${room.name} RCL ${rcl} — ${getBatches(rcl).length} batches queued`);
   }
 
   const batches = getBatches(rcl);
 
   // Safety: batch index out of bounds after code deployment changes batch lists
-  if (Memory.planner.batch >= batches.length && batches.length > 0) {
-    Memory.planner.batch = 0;
-    Memory.planner.batchPlaced = false;
+  if (planner.batch >= batches.length && batches.length > 0) {
+    planner.batch = 0;
+    planner.batchPlaced = false;
   }
 
   // No more batches for this RCL
-  if (Memory.planner.batch >= batches.length) return;
+  if (planner.batch >= batches.length) return;
 
   // No construction sites → run repair scan to rebuild destroyed structures.
   // Only runs when the forward planner is idle (batch already placed, or
   // all batches complete). One batch of repairs per idle cycle.
   if (room.find(FIND_CONSTRUCTION_SITES).length === 0) {
-    if (runRepairScan(room, spawn, rcl)) return;
+    if (runRepairScan(room, spawn, rcl, planner)) return;
   }
 
   // Current batch complete → advance
-  if (batchComplete(room)) {
-    const oldLabel = batches[Memory.planner.batch].label;
-    Memory.planner.batch++;
-    Memory.planner.batchPlaced = false;
-    console.log(`[planner] ✓ ${oldLabel} complete, advancing to batch ${Memory.planner.batch}`);
+  if (batchComplete(room, planner)) {
+    const oldLabel = batches[planner.batch].label;
+    planner.batch++;
+    planner.batchPlaced = false;
+    console.log(`[planner] ${room.name} ✓ ${oldLabel} complete, advancing to batch ${planner.batch}`);
 
-    if (Memory.planner.batch >= batches.length) {
-      console.log(`[planner] All RCL ${rcl} batches complete`);
+    if (planner.batch >= batches.length) {
+      console.log(`[planner] ${room.name} All RCL ${rcl} batches complete`);
       return;
     }
   }
 
   // Place current batch
-  if (!Memory.planner.batchPlaced) {
-    const batch = batches[Memory.planner.batch];
+  if (!planner.batchPlaced) {
+    const batch = batches[planner.batch];
     let placed = 0;
 
     if (batch.kind === 'static') {
@@ -465,8 +467,8 @@ export function runConstructionPlanner(room: Room): void {
     }
 
     if (placed > 0) {
-      console.log(`[planner] ${batch.label}: ${placed} sites placed`);
+      console.log(`[planner] ${room.name} ${batch.label}: ${placed} sites placed`);
     }
-    Memory.planner.batchPlaced = true;
+    planner.batchPlaced = true;
   }
 }
