@@ -30,56 +30,37 @@ export function run(creep: Creep): boolean {
   const mem = creep.memory as AttackerMemory;
   mem.lastRoom = creep.room.name;
 
-  // Always attack anything in range, even while traveling
-  const attackTarget = findPriorityTarget(creep);
-  if (attackTarget) {
-    const result = creep.attack(attackTarget as any);
-    if (result === OK) {
-      // Attack succeeded — move toward next target
-      const moveTarget = findMoveTarget(creep, attackTarget);
-      if (moveTarget) creep.moveTo(moveTarget as any);
-      return true;
-    }
-  }
-
-  // Move toward highest-priority cluster
-  const moveTarget = findMoveTarget(creep, null);
-  if (moveTarget) {
-    creep.moveTo(moveTarget as any);
+  // Not in target room → travel there, attack anything in range along the way
+  if (creep.room.name !== mem.targetRoom) {
+    const nearby = findPriorityTarget(creep);
+    if (nearby) creep.attack(nearby as any);
+    travelToRoom(creep, mem.targetRoom, true);
     return true;
   }
 
-  // If in target room and nothing to attack, room is clear
-  if (creep.room.name !== mem.targetRoom) {
-    travelToRoom(creep, mem.targetRoom, true);
+  // In target room: attack best tier, move toward same tier
+  const tiers = getPriorityTiers(creep);
+  for (const tier of tiers) {
+    if (tier.length === 0) continue;
+
+    // Attack closest in-range target from this tier
+    const inRange = tier.filter(t => creep.pos.inRangeTo(t.pos, 1));
+    if (inRange.length > 0) {
+      creep.attack(inRange[0] as any);
+    }
+
+    // Move toward closest target from this tier (don't exclude anything)
+    const moveTarget = creep.pos.findClosestByPath(tier as any) as unknown as Attackable;
+    if (moveTarget) creep.moveTo(moveTarget as any);
+    return true;
   }
 
   return true;
 }
 
-// ── Priority ladder helpers ──
+// ── Priority ladder ──
 
 type Attackable = AnyCreep | AnyStructure;
-
-function findPriorityTarget(creep: Creep): Attackable | null {
-  const tiers = getPriorityTiers(creep);
-  for (const tier of tiers) {
-    const inRange = tier.filter(t => creep.pos.inRangeTo(t.pos, 1));
-    if (inRange.length > 0) return inRange[0];
-  }
-  return null;
-}
-
-function findMoveTarget(creep: Creep, exclude: Attackable | null): Attackable | null {
-  const tiers = getPriorityTiers(creep);
-  for (const tier of tiers) {
-    const filtered = exclude ? tier.filter(t => t.id !== exclude.id) : tier;
-    if (filtered.length > 0) {
-      return creep.pos.findClosestByPath(filtered as any) as unknown as Attackable;
-    }
-  }
-  return null;
-}
 
 function getPriorityTiers(creep: Creep): Attackable[][] {
   const hostileCreeps = creep.room.find(FIND_HOSTILE_CREEPS);
