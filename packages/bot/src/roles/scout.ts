@@ -42,18 +42,7 @@ export function run(creep: Creep): boolean {
   }
 
   // ── In target room — score it ──
-  let result: any = null;
-  try {
-    result = scoreRoom(roomName);
-  } catch (e: any) {
-    if (!Memory._scoringErrors) (Memory as any)._scoringErrors = {};
-    (Memory as any)._scoringErrors[roomName] = {
-      tick: Game.time,
-      error: String(e),
-      stack: e.stack ? String(e.stack) : undefined,
-    };
-  }
-
+  const result = scoreRoom(roomName);
   if (result && result.score > 0) {
     col.candidates[roomName] = result;
     if (!col.bestRoom || result.score > col.bestRoom.score) {
@@ -64,13 +53,6 @@ export function run(creep: Creep): boolean {
         worldY: result.worldY,
       };
     }
-  } else if (result) {
-    // Scored but filtered — log positionScore and sources for diagnosis
-    if (!Memory._scoringRejects) (Memory as any)._scoringRejects = {};
-    (Memory as any)._scoringRejects[roomName] = {
-      tick: Game.time,
-      reason: 'score=' + result.score + ' ps=' + result.positionScore + ' src=' + result.sources,
-    };
   }
 
   return true;

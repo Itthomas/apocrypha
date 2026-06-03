@@ -55,17 +55,17 @@ const MAX_CANDIDATES = 20;
 
 export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, requireUnreserved: boolean = true): RoomScore | null {
   const room = Game.rooms[roomName];
-  if (!room) return reject(roomName, 'no_room');
+  if (!room) return null;
 
   const controller = room.controller;
-  if (!controller) return reject(roomName, 'no_controller');
+  if (!controller) return null;
 
-  if (requireUnclaimed && controller.owner) return reject(roomName, 'claimed');
+  if (requireUnclaimed && controller.owner) return null;
 
-  if (requireUnreserved && controller.reservation) return reject(roomName, 'reserved');
+  if (requireUnreserved && controller.reservation) return null;
 
   const sources = room.find(FIND_SOURCES);
-  if (sources.length < MIN_SOURCES) return reject(roomName, 'sources<2');
+  if (sources.length < MIN_SOURCES) return null;
 
   const pois: POI[] = [];
   for (const s of sources) pois.push({ type: 'source', x: s.pos.x, y: s.pos.y });
@@ -74,7 +74,7 @@ export function scoreRoom(roomName: string, requireUnclaimed: boolean = true, re
   pois.push({ type: 'controller', x: controller.pos.x, y: controller.pos.y });
 
   const result = findOptimalSpawn(room.name, pois);
-  if (!result) return reject(roomName, 'no_spawn_pos');
+  if (!result) return null;
 
   let roomScore = result.positionScore + sources.length * SOURCE_COUNT_BONUS;
 
@@ -241,10 +241,3 @@ function scorePosition(
   };
 }
 
-// ── Rejection tracing ──
-
-function reject(roomName: string, reason: string): null {
-  if (!Memory._scoringRejects) (Memory as any)._scoringRejects = {};
-  (Memory as any)._scoringRejects[roomName] = { tick: Game.time, reason };
-  return null;
-}
