@@ -15,12 +15,14 @@ interface ClaimerMemory {
   spawnY: number;
   claimed: boolean;
   sitePlaced: boolean;
+  lastRoom?: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as ClaimerMemory;
+  mem.lastRoom = creep.room.name;
 
   // ── Not in target room yet → route there ──
   if (creep.room.name !== mem.targetRoom) {

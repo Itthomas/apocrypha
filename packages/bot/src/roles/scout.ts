@@ -15,6 +15,7 @@ interface ScoutMemory {
   targetRoom: string;
   sourceRoom: string;
   respawns: number;
+  lastRoom?: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
 }
@@ -25,6 +26,10 @@ export function run(creep: Creep): boolean {
   if (!col?.active || Game.time >= col.deadline) {
     return false;
   }
+
+  // Track room immediately — if we die before the end of this tick,
+  // the death handler needs the correct room for hostile marking.
+  mem.lastRoom = creep.room.name;
 
   // ── Edge override: move toward room center if on the boundary ──
   const pos = creep.pos;

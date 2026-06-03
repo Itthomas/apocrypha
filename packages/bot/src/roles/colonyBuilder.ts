@@ -16,12 +16,14 @@ import { run as survivorRun } from './survivor';
 interface ColonyBuilderMemory {
   role: 'colonyBuilder';
   targetRoom: string;
+  lastRoom?: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
 }
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as ColonyBuilderMemory;
+  mem.lastRoom = creep.room.name;
 
   // ── Not in target room yet → route there ──
   if (creep.room.name !== mem.targetRoom) {
