@@ -33,6 +33,15 @@ export function isHostile(roomName: string): boolean {
   return true;
 }
 
+/** Check whether a room name refers to a hallway (x or y divisible by 10) */
+function isHallway(roomName: string): boolean {
+  const match = roomName.match(/^([WE])(\d+)([NS])(\d+)$/);
+  if (!match) return false;
+  const x = (match[1] === 'W' ? -1 : 1) * parseInt(match[2], 10);
+  const y = (match[3] === 'N' ? 1 : -1) * parseInt(match[4], 10);
+  return Math.abs(x) % 10 === 0 || Math.abs(y) % 10 === 0;
+}
+
 /**
  * Navigate a creep to a target room using exit-by-exit routing.
  * Returns true if movement was issued, false if no path exists.
@@ -69,11 +78,11 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
         // Respawn / novice zone filters
         const status = Game.map.getRoomStatus(roomName).status;
 
-        // onlyRespawn mode: skip everything except respawn rooms
-        if (onlyRespawn && status !== 'respawn') return Infinity;
+        // onlyRespawn mode: skip everything except respawn rooms and hallways
+        if (onlyRespawn && status !== 'respawn' && !isHallway(roomName)) return Infinity;
 
-        // onlyNovice mode: skip everything except novice rooms
-        if (onlyNovice && status !== 'novice') return Infinity;
+        // onlyNovice mode: skip everything except novice rooms and hallways
+        if (onlyNovice && status !== 'novice' && !isHallway(roomName)) return Infinity;
 
         // Default: skip respawn and novice zones (impassable boundary walls)
         if (!onlyRespawn && !onlyNovice && (status === 'respawn' || status === 'novice')) return Infinity;
