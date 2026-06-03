@@ -51,7 +51,7 @@ export function run(creep: Creep): boolean {
 
   // If in target room and nothing to attack, room is clear
   if (creep.room.name !== mem.targetRoom) {
-    travelToRoom(creep, mem.targetRoom);
+    travelToRoom(creep, mem.targetRoom, true);
   }
 
   return true;

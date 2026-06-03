@@ -36,8 +36,9 @@ export function isHostile(roomName: string): boolean {
 /**
  * Navigate a creep to a target room using exit-by-exit routing.
  * Returns true if movement was issued, false if no path exists.
+ * @param skipHostileAvoid If true, don't filter out hostile rooms (combat creeps).
  */
-export function travelToRoom(creep: Creep, targetRoom: string): boolean {
+export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false): boolean {
   const mem = creep.memory as TravelMemory;
 
   // Track last room for death-based hostile detection
@@ -63,7 +64,7 @@ export function travelToRoom(creep: Creep, targetRoom: string): boolean {
   if (!mem.route || mem.route.length === 0) {
     const route = Game.map.findRoute(creep.room.name, targetRoom, {
       routeCallback(roomName) {
-        if (isHostile(roomName)) return Infinity;
+        if (!skipHostileAvoid && isHostile(roomName)) return Infinity;
         if (Game.rooms[roomName]) {
           const ctrl = Game.rooms[roomName].controller;
           if (ctrl && ctrl.owner && !ctrl.my) return Infinity;
