@@ -88,7 +88,11 @@ export function runColonization(): void {
   if (col?.active && !col?.phase) {
     if (Game.time >= col.deadline) { finishWave(); return; }
     const targets: string[] = col.scoutTargets || [];
-    if (targets.length > 0 && targets.every((r: string) => col.scoutState[r]?.done)) {
+    // All rooms either scored, rejected, or have scouts that hit retry limit
+    if (targets.length > 0 && targets.every((r: string) => {
+      const s = col.scoutState[r];
+      return s?.done || (s?.respawns >= 5);
+    })) {
       finishWave();
     }
     return;
