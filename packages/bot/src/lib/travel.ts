@@ -45,11 +45,14 @@ function isHallway(roomName: string): boolean {
 /**
  * Navigate a creep to a target room using exit-by-exit routing.
  * Returns true if movement was issued, false if no path exists.
+ *
+ * Automatically detects the current room's zone status and routes
+ * accordingly: respawn rooms only route through respawn+hallways,
+ * novice rooms only through novice+hallways, normal rooms skip both.
+ *
  * @param skipHostileAvoid If true, don't filter out hostile or owned rooms (combat).
- * @param onlyRespawn If true, ONLY route through respawn area rooms.
- * @param onlyNovice If true, ONLY route through novice area rooms.
  */
-export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false, onlyRespawn: boolean = false, onlyNovice: boolean = false): boolean {
+export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false): boolean {
   const mem = creep.memory as TravelMemory;
 
   // Track last room for death-based hostile detection
@@ -65,6 +68,10 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
     return true;
   }
 
+  // Detect zone mode from the creep's current room
+  const ownStatus = Game.map.getRoomStatus(creep.room.name).status;
+  const restrictTo = ownStatus === 'respawn' ? 'respawn' : ownStatus === 'novice' ? 'novice' : null;
+
   // Invalidate route if we entered a room not matching the cached route head
   if (mem.route && mem.route.length > 0 && mem.routeRoom !== creep.room.name) {
     delete mem.route;
@@ -75,17 +82,13 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
   if (!mem.route || mem.route.length === 0) {
     const route = Game.map.findRoute(creep.room.name, targetRoom, {
       routeCallback(roomName) {
-        // Respawn / novice zone filters
         const status = Game.map.getRoomStatus(roomName).status;
 
-        // onlyRespawn mode: skip everything except respawn rooms and hallways
-        if (onlyRespawn && status !== 'respawn' && !isHallway(roomName)) return Infinity;
+        // In a respawn or novice zone: only route through matching rooms + hallways
+        if (restrictTo && status !== restrictTo && !isHallway(roomName)) return Infinity;
 
-        // onlyNovice mode: skip everything except novice rooms and hallways
-        if (onlyNovice && status !== 'novice' && !isHallway(roomName)) return Infinity;
-
-        // Default: skip respawn and novice zones (impassable boundary walls)
-        if (!onlyRespawn && !onlyNovice && (status === 'respawn' || status === 'novice')) return Infinity;
+        // In a normal room: skip respawn and novice zones
+        if (!restrictTo && (status === 'respawn' || status === 'novice')) return Infinity;
 
         if (!skipHostileAvoid && isHostile(roomName)) return Infinity;
         if (!skipHostileAvoid && Game.rooms[roomName]) {
