@@ -248,15 +248,13 @@ function getBatches(rcl: number): BatchDef[] {
   const batches: BatchDef[] = [];
 
   // RCL 1: nothing — let the room stabilize first
-  if (rcl >= 2) {
-    batches.push({ label: 'roads_src_ctrl', kind: 'dynamic', place: placeRoadsToSourcesAndController });
-  }
 
-  // RCL 2: extensions batch 1, road grid, source containers
+  // RCL 2: extensions → source containers → source/ctrl roads → blueprint roads
   if (rcl >= 2 && bp) {
     if (bp[1]?.length) batches.push({ label: 'ext_1', kind: 'static', entries: bp[1] });
-    if (bp[2]?.length) batches.push({ label: 'roads_grid', kind: 'static', entries: bp[2] });
     batches.push({ label: 'source_containers', kind: 'dynamic', place: placeSourceContainers });
+    batches.push({ label: 'roads_src_ctrl', kind: 'dynamic', place: placeRoadsToSourcesAndController });
+    if (bp[2]?.length) batches.push({ label: 'roads_grid', kind: 'static', entries: bp[2] });
   }
 
   // RCL 3: extensions batch 2, tower 1
