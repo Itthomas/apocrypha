@@ -372,6 +372,13 @@ function trySpawnClaimer(room: Room, spawn: StructureSpawn): boolean {
 
 // ── Combat spawning (per-room attack targets) ──
 
+/** Strip surrounding quotes from a room name (console input artifact) */
+function sanitizeRoomName(name: string): string {
+  if (name.startsWith('"') && name.endsWith('"')) return name.slice(1, -1);
+  if (name.startsWith("'") && name.endsWith("'")) return name.slice(1, -1);
+  return name;
+}
+
 function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
   if ((room.controller?.level ?? 0) < 3) return false;
 
@@ -379,7 +386,8 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
   if (!targets) return false;
 
   // Attacker: 1 per target room
-  for (const targetRoom of (targets.attacker || [])) {
+  for (let targetRoom of (targets.attacker || [])) {
+    targetRoom = sanitizeRoomName(targetRoom);
     if (isCombatCreepAlive('attacker', targetRoom)) continue;
     const rcl = room.controller?.level ?? 0;
     const body = getBody('attacker', rcl, room.energyAvailable, room.energyCapacityAvailable);
@@ -395,7 +403,8 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
   }
 
   // Attrition: 1 per target room
-  for (const targetRoom of (targets.attrition || [])) {
+  for (let targetRoom of (targets.attrition || [])) {
+    targetRoom = sanitizeRoomName(targetRoom);
     if (isCombatCreepAlive('attrition', targetRoom)) continue;
     const rcl = room.controller?.level ?? 0;
     const body = getBody('attrition', rcl, room.energyAvailable, room.energyCapacityAvailable);
