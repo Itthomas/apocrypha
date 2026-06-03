@@ -36,9 +36,11 @@ export function isHostile(roomName: string): boolean {
 /**
  * Navigate a creep to a target room using exit-by-exit routing.
  * Returns true if movement was issued, false if no path exists.
- * @param skipHostileAvoid If true, don't filter out hostile rooms (combat creeps).
+ * @param skipHostileAvoid If true, don't filter out hostile or owned rooms (combat).
+ * @param onlyRespawn If true, ONLY route through respawn area rooms.
+ * @param onlyNovice If true, ONLY route through novice area rooms.
  */
-export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false): boolean {
+export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false, onlyRespawn: boolean = false, onlyNovice: boolean = false): boolean {
   const mem = creep.memory as TravelMemory;
 
   // Track last room for death-based hostile detection
@@ -64,6 +66,18 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
   if (!mem.route || mem.route.length === 0) {
     const route = Game.map.findRoute(creep.room.name, targetRoom, {
       routeCallback(roomName) {
+        // Respawn / novice zone filters
+        const status = Game.map.getRoomStatus(roomName).status;
+
+        // onlyRespawn mode: skip everything except respawn rooms
+        if (onlyRespawn && status !== 'respawn') return Infinity;
+
+        // onlyNovice mode: skip everything except novice rooms
+        if (onlyNovice && status !== 'novice') return Infinity;
+
+        // Default: skip respawn and novice zones (impassable boundary walls)
+        if (!onlyRespawn && !onlyNovice && (status === 'respawn' || status === 'novice')) return Infinity;
+
         if (!skipHostileAvoid && isHostile(roomName)) return Infinity;
         if (!skipHostileAvoid && Game.rooms[roomName]) {
           const ctrl = Game.rooms[roomName].controller;
