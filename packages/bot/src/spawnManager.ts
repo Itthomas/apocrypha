@@ -370,6 +370,64 @@ function trySpawnClaimer(room: Room, spawn: StructureSpawn): boolean {
   return false;
 }
 
+// ── Combat spawning (per-room attack targets) ──
+
+function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
+  if ((room.controller?.level ?? 0) < 3) return false;
+
+  const targets = (Memory.rooms[room.name] as any)?.attackTargets;
+  if (!targets) return false;
+
+  // Attacker: 1 per target room
+  for (const targetRoom of (targets.attacker || [])) {
+    if (isCombatCreepAlive('attacker', targetRoom)) continue;
+    const rcl = room.controller?.level ?? 0;
+    const body = getBody('attacker', rcl, room.energyAvailable, room.energyCapacityAvailable);
+    if (!body || body.length === 0) continue;
+    const name = `attacker_${targetRoom}_${Game.time}`;
+    const result = spawn.spawnCreep(body, name, {
+      memory: { role: 'attacker', targetRoom, spawnTick: Game.time }
+    });
+    if (result === OK) {
+      console.log(`[spawn] ${name} (attacker) → ${targetRoom}`);
+      return true;
+    }
+  }
+
+  // Attrition: 1 per target room
+  for (const targetRoom of (targets.attrition || [])) {
+    if (isCombatCreepAlive('attrition', targetRoom)) continue;
+    const rcl = room.controller?.level ?? 0;
+    const body = getBody('attrition', rcl, room.energyAvailable, room.energyCapacityAvailable);
+    if (!body || body.length === 0) continue;
+    const name = `attrition_${targetRoom}_${Game.time}`;
+    const result = spawn.spawnCreep(body, name, {
+      memory: {
+        role: 'attrition',
+        targetRoom,
+        phase: 'attriting',
+        sourceRoom: room.name,
+        spawnTick: Game.time,
+      }
+    });
+    if (result === OK) {
+      console.log(`[spawn] ${name} (attrition) → ${targetRoom}`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** Check if a combat creep with the given role and target is alive globally */
+function isCombatCreepAlive(role: string, targetRoom: string): boolean {
+  for (const name in Game.creeps) {
+    const c = Game.creeps[name];
+    if (c.memory.role === role && (c.memory as any).targetRoom === targetRoom) return true;
+  }
+  return false;
+}
+
 // ── Colonization builder spawning ──
 
 const COLONY_BUILDER_MAX = 3;
@@ -521,6 +579,9 @@ export function runSpawnManager(room: Room): void {
 
   // ── Colonization claimer ──
   if (trySpawnClaimer(room, spawns[0])) return;
+
+  // ── Combat: attack targets from room memory (1 attacker + 1 attrition per target) ──
+  if (trySpawnCombat(room, spawns[0])) return;
 
   // ── Colonization builders (lowest priority) ──
   if (trySpawnColonyBuilder(room, spawns[0])) return;
