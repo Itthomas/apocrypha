@@ -32,8 +32,11 @@ export function run(creep: Creep): boolean {
 
   // Not in target room → travel there, attack anything in range along the way
   if (creep.room.name !== mem.targetRoom) {
-    const nearby = findPriorityTarget(creep);
-    if (nearby) creep.attack(nearby as any);
+    const tiers = getPriorityTiers(creep);
+    for (const tier of tiers) {
+      const inRange = tier.filter(t => creep.pos.inRangeTo(t.pos, 1));
+      if (inRange.length > 0) { creep.attack(inRange[0] as any); break; }
+    }
     travelToRoom(creep, mem.targetRoom, true);
     return true;
   }
