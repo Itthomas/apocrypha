@@ -30,6 +30,8 @@ const modules = {
   'role.survivor':        'roles/survivor.ts',
   'role.claimer':         'roles/claimer.ts',
   'role.colonyBuilder':   'roles/colonyBuilder.ts',
+  'role.attacker':        'roles/attacker.ts',
+  'role.attrition':       'roles/attrition.ts',
   'spawnManager':         'spawnManager.ts',
   'bodyDesigner':         'bodyDesigner.ts',
   'constructionPlanner':  'constructionPlanner.ts',

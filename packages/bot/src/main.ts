@@ -17,6 +17,8 @@ var roleSurvivor = require('role.survivor');
 var roleScout = require('role.scout');
 var roleClaimer = require('role.claimer');
 var roleColonyBuilder = require('role.colonyBuilder');
+var roleAttacker = require('role.attacker');
+var roleAttrition = require('role.attrition');
 var mantra = require('mantra');
 var tower = require('tower');
 var colonization = require('colonization');
@@ -36,6 +38,8 @@ function getRoleModule(role: string) {
       'scout': roleScout,
       'claimer': roleClaimer,
       'colonyBuilder': roleColonyBuilder,
+      'attacker': roleAttacker,
+      'attrition': roleAttrition,
     };
   }
   return roleModules[role] || null;
@@ -65,7 +69,7 @@ export function loop(): void {
 
       // If a traveler died non-naturally in a hostile room, blacklist it
       var role = mem.role as string | undefined;
-      if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder')) {
+      if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder' || role === 'attacker' || role === 'attrition')) {
         var spawnTick = mem.spawnTick as number | undefined;
         var lastRoom = mem.lastRoom as string | undefined;
         var diedNaturally = spawnTick ? (Game.time - spawnTick >= 1500) : false;
@@ -116,7 +120,7 @@ export function loop(): void {
 
     // Emergency: if no miners, non-hauler creeps harvest to keep colony alive.
     // Haulers are skipped — they have no WORK parts and rely on container withdrawal.
-    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && countMiners(creep.room) === 0) {
+    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition' && countMiners(creep.room) === 0) {
       roleSurvivor.run(creep);
       continue;
     }
@@ -129,7 +133,7 @@ export function loop(): void {
     
     // If role couldn't find work, harvest as fallback.
     // Scouts are excluded — they either explore or stand still.
-    if (!acted && role !== 'miner' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder') {
+    if (!acted && role !== 'miner' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition') {
       roleSurvivor.run(creep);
     }
   }

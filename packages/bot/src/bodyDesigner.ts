@@ -8,9 +8,12 @@
 
 /** Body comp spec: counts of WORK, CARRY, MOVE, (optionally TOUGH/ATTACK/etc.) */
 export interface BodySpec {
-  work: number;
-  carry: number;
+  work?: number;
+  carry?: number;
   move: number;
+  tough?: number;
+  attack?: number;
+  heal?: number;
 }
 
 /** Tiered body definitions for a role */
@@ -55,26 +58,55 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
     { minRcl: 5, primary: { work: 8, carry: 2, move: 2 }, fallback: { work: 6, carry: 2, move: 2 } },
     { minRcl: 7, primary: { work: 15, carry: 3, move: 3 }, fallback: { work: 10, carry: 2, move: 2 } },
   ],
+  // Combat: tough front, move back, attack/heal interleaved with move
+  attacker: [
+    { minRcl: 3, primary: { tough: 5, attack: 5, move: 10 } },
+    { minRcl: 5, primary: { tough: 8, attack: 8, move: 16 } },
+    { minRcl: 7, primary: { tough: 12, attack: 12, move: 24 } },
+  ],
+  attrition: [
+    { minRcl: 3, primary: { tough: 7, heal: 1, move: 2 } },
+    { minRcl: 5, primary: { tough: 14, heal: 2, move: 4 } },
+    { minRcl: 7, primary: { tough: 21, heal: 3, move: 6 } },
+  ],
 };
 
 /**
  * Build a body part array from a BodySpec.
- * Returns [WORK..., CARRY..., MOVE...] in that order for cheaper spawn costs
- * (cheapest parts first → sorting not needed for our simple comps).
+ * Standard roles: [WORK..., CARRY..., MOVE...]
+ * Combat roles: [TOUGH×N, MOVE×N, ATTACK/HEAL interleaved with MOVE]
  */
 function bodyFromSpec(spec: BodySpec): BodyPartConstant[] {
+  // Combat body: tough front → move block → attack/heal interleaved with move
+  if (spec.tough && (spec.attack || spec.heal)) {
+    const parts: BodyPartConstant[] = [];
+    const n = spec.attack || spec.heal || 0;
+    for (let i = 0; i < (spec.tough || 0); i++) parts.push(TOUGH);
+    for (let i = 0; i < n; i++) parts.push(MOVE);
+    for (let i = 0; i < n; i++) {
+      if (spec.attack) parts.push(ATTACK);
+      else parts.push(HEAL);
+      parts.push(MOVE);
+    }
+    return parts;
+  }
+
+  // Standard body
   const parts: BodyPartConstant[] = [];
-  for (let i = 0; i < spec.work; i++) parts.push(WORK);
-  for (let i = 0; i < spec.carry; i++) parts.push(CARRY);
+  for (let i = 0; i < (spec.work || 0); i++) parts.push(WORK);
+  for (let i = 0; i < (spec.carry || 0); i++) parts.push(CARRY);
   for (let i = 0; i < spec.move; i++) parts.push(MOVE);
   return parts;
 }
 
 /** Calculate energy cost of a BodySpec */
 function specCost(spec: BodySpec): number {
-  return spec.work * BODYPART_COST[WORK]
-       + spec.carry * BODYPART_COST[CARRY]
-       + spec.move * BODYPART_COST[MOVE];
+  return (spec.work || 0) * BODYPART_COST[WORK]
+       + (spec.carry || 0) * BODYPART_COST[CARRY]
+       + spec.move * BODYPART_COST[MOVE]
+       + (spec.tough || 0) * BODYPART_COST[TOUGH]
+       + (spec.attack || 0) * BODYPART_COST[ATTACK]
+       + (spec.heal || 0) * BODYPART_COST[HEAL];
 }
 
 /**
