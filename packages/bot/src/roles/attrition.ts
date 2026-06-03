@@ -29,6 +29,13 @@ export function run(creep: Creep): boolean {
   // Self-heal every tick regardless of phase
   creep.heal(creep);
 
+  // ── Edge override: move toward room center if on the boundary ──
+  const pos = creep.pos;
+  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
+    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
+    return true;
+  }
+
   // ── Not at target yet → travel there (ignore hostile blacklist) ──
   if (mem.phase === 'attriting' && creep.room.name !== mem.targetRoom) {
     travelToRoom(creep, mem.targetRoom, true);
