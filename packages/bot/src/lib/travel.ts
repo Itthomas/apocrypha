@@ -65,7 +65,7 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
     const route = Game.map.findRoute(creep.room.name, targetRoom, {
       routeCallback(roomName) {
         if (!skipHostileAvoid && isHostile(roomName)) return Infinity;
-        if (Game.rooms[roomName]) {
+        if (!skipHostileAvoid && Game.rooms[roomName]) {
           const ctrl = Game.rooms[roomName].controller;
           if (ctrl && ctrl.owner && !ctrl.my) return Infinity;
         }
