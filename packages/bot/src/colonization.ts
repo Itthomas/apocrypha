@@ -90,7 +90,7 @@ export function runColonization(): void {
     const targets: string[] = col.scoutTargets || [];
     // All rooms either scored, rejected, or have scouts that hit retry limit
     if (targets.length > 0 && targets.every((r: string) => {
-      const s = col.scoutState[r];
+      const s = col.scoutState?.[r];
       return s?.done || (s?.respawns >= 5);
     })) {
       finishWave();
