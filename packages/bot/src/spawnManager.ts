@@ -446,9 +446,15 @@ export function runSpawnManager(room: Room): void {
     const current = creepCounts[quota.role] || 0;
 
     // Miner max is one per source. Hauler max is one per source container.
-    const effectiveMax = quota.role === 'miner' ? sourceCount
+    let effectiveMax = quota.role === 'miner' ? sourceCount
       : quota.role === 'hauler' ? sourceContainers
       : quota.maximum;
+
+    // Survivor at RCL ≤ 2: bump max to 8 when miners are active
+    if (quota.role === 'survivor' && rcl <= 2) {
+      const hasMiners = (creepCounts['miner'] || 0) > 0;
+      if (hasMiners) effectiveMax = 8;
+    }
 
     // Skip if at max
     if (current >= effectiveMax) continue;
