@@ -58,18 +58,39 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
     { minRcl: 5, primary: { work: 8, carry: 2, move: 2 }, fallback: { work: 6, carry: 2, move: 2 } },
     { minRcl: 7, primary: { work: 15, carry: 3, move: 3 }, fallback: { work: 10, carry: 2, move: 2 } },
   ],
-  // Combat: tough front, move back, attack/heal interleaved with move
-  attacker: [
-    { minRcl: 3, primary: { tough: 5, attack: 5, move: 10 } },
-    { minRcl: 5, primary: { tough: 8, attack: 8, move: 16 } },
-    { minRcl: 7, primary: { tough: 12, attack: 12, move: 24 } },
-  ],
-  attrition: [
-    { minRcl: 3, primary: { tough: 7, heal: 1, move: 2 } },
-    { minRcl: 5, primary: { tough: 14, heal: 2, move: 4 } },
-    { minRcl: 7, primary: { tough: 21, heal: 3, move: 6 } },
-  ],
+  // Combat: dynamically sized — largest possible block count at given ratio
+  // attacker: tough:attack:move = 1:1:2 (4 parts/block, 190e)
+  // attrition: tough:heal:move = 5:1:3 (9 parts/block, 450e)
+  attacker: [] as BodyTier[],
+  attrition: [] as BodyTier[],
 };
+
+const MAX_CREEP_PARTS = 50;
+
+/** Build the largest combat body that fits in energyAvailable at the role's fixed ratio */
+function getCombatBody(role: string, energy: number): BodyPartConstant[] | null {
+  let partsPerBlock: number, blockCost: number, tough: number, combat: number, move: number;
+
+  if (role === 'attacker') {
+    // 1:1:2 tough:attack:move = 4 parts, 190e
+    partsPerBlock = 4; blockCost = 190;
+    tough = 1; combat = 1; move = 2;
+  } else {
+    // 5:1:3 tough:heal:move = 9 parts, 450e
+    partsPerBlock = 9; blockCost = 450;
+    tough = 5; combat = 1; move = 3;
+  }
+
+  const maxByEnergy = Math.floor(energy / blockCost);
+  const maxByParts = Math.floor(MAX_CREEP_PARTS / partsPerBlock);
+  const blocks = Math.max(1, Math.min(maxByEnergy, maxByParts));
+
+  const spec: BodySpec = role === 'attacker'
+    ? { tough: tough * blocks, attack: combat * blocks, move: move * blocks }
+    : { tough: tough * blocks, heal: combat * blocks, move: move * blocks };
+
+  return bodyFromSpec(spec);
+}
 
 /**
  * Build a body part array from a BodySpec.
@@ -118,6 +139,12 @@ function specCost(spec: BodySpec): number {
  *   miner fallback body when extensions are too few for the 700e baseline.
  */
 export function getBody(role: string, rcl: number, energyAvailable: number, energyCap?: number): BodyPartConstant[] | null {
+  // Combat roles: largest possible with fixed ratio, RCL ≥ 3
+  if (role === 'attacker' || role === 'attrition') {
+    if (rcl < 3) return null;
+    return getCombatBody(role, energyAvailable);
+  }
+
   const tiers = BODY_TIERS[role];
   if (!tiers) return null;
 
