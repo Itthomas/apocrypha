@@ -84,9 +84,13 @@ export function runColonization(): void {
     return;
   }
 
-  // ── Scouting: active wave — check deadline expiry ──
+  // ── Scouting: active wave — check if all rooms scored or deadline expired ──
   if (col?.active && !col?.phase) {
-    if (Game.time >= col.deadline) finishWave();
+    if (Game.time >= col.deadline) { finishWave(); return; }
+    const targets: string[] = col.scoutTargets || [];
+    if (targets.length > 0 && targets.every((r: string) => col.scoutState[r]?.done)) {
+      finishWave();
+    }
     return;
   }
 

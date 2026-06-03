@@ -300,6 +300,9 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
     const state = col.scoutState[targetRoom];
     if (!state) continue;
 
+    // Room already scored — don't respawn
+    if (state.done) continue;
+
     // Already alive?
     if (state.name && Game.creeps[state.name]) continue;
 

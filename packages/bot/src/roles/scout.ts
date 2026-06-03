@@ -55,5 +55,10 @@ export function run(creep: Creep): boolean {
     }
   }
 
+  // Mark room as scored so we don't respawn another scout for it
+  if (col.scoutState[roomName]) {
+    col.scoutState[roomName].done = true;
+  }
+
   return true;
 }
