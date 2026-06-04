@@ -111,13 +111,19 @@ export function run(creep: Creep): boolean {
         for (let x = 0; x < 50; x++) {
           for (let y = 0; y < 50; y++) {
             const t = terrain.get(x, y);
-            if (t === TERRAIN_MASK_WALL) costs.set(x, y, 255);
-            else {
-              // Prior paths are treated as roads (cost 1)
-              if (roadTiles.has(`${roomName},${x},${y}`)) costs.set(x, y, 1);
-              else costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
-            }
+            if (t === TERRAIN_MASK_WALL) { costs.set(x, y, 255); continue; }
+            // Prior computed paths are treated as roads (cost 1) — overrides everything
+            if (roadTiles.has(`${roomName},${x},${y}`)) { costs.set(x, y, 1); continue; }
+            costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
           }
+        }
+        // Treat existing roads as cost 1 so paths converge on real infrastructure
+        const room = Game.rooms[roomName];
+        if (room) {
+          const roads = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
+          });
+          for (const r of roads) costs.set(r.pos.x, r.pos.y, 1);
         }
         return costs;
       },
