@@ -57,6 +57,11 @@ export function runRemoteHarvesting(): void {
       if (entry.phase === 'harvesting' && entry.roadPath && Game.time % 50 === 17) {
         placeRemoteRoads(room, remoteName, entry);
       }
+
+      // Decay reserve ticks estimate each tick (reserver overwrites with real value)
+      if (entry.phase === 'harvesting') {
+        entry.reserveTicks = Math.max(0, (entry.reserveTicks || 0) - 1);
+      }
     }
   }
 }
