@@ -98,16 +98,24 @@ function getCombatBody(role: string, energy: number): BodyPartConstant[] | null 
  * Combat roles: [TOUGH×N, MOVE×N, ATTACK/HEAL interleaved with MOVE]
  */
 function bodyFromSpec(spec: BodySpec): BodyPartConstant[] {
-  // Combat body: tough front → move block → attack/heal interleaved with move
+  // Combat body: TOUGH front, then combat parts each followed by MOVE pool
   if (spec.tough && (spec.attack || spec.heal)) {
     const parts: BodyPartConstant[] = [];
-    const n = spec.attack || spec.heal || 0;
+    const combatCount = spec.attack || spec.heal || 0;
+    const moveCount = spec.move || 0;
+
+    // Tough front
     for (let i = 0; i < (spec.tough || 0); i++) parts.push(TOUGH);
-    for (let i = 0; i < n; i++) parts.push(MOVE);
-    for (let i = 0; i < n; i++) {
+
+    // Distribute MOVE parts: each combat part gets its share after it
+    const movePerCombat = Math.floor(moveCount / combatCount);
+    const moveRemainder = moveCount % combatCount;
+
+    for (let i = 0; i < combatCount; i++) {
+      const extra = i < moveRemainder ? 1 : 0;
       if (spec.attack) parts.push(ATTACK);
       else parts.push(HEAL);
-      parts.push(MOVE);
+      for (let j = 0; j < movePerCombat + extra; j++) parts.push(MOVE);
     }
     return parts;
   }
