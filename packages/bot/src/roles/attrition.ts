@@ -3,8 +3,8 @@
  *
  * Enters a hostile room and sits near the entry door, self-healing
  * while taking tower fire. When health drops below threshold, retreats
- * through the door to heal fully, then repeats. Drains tower energy
- * at negligible creep cost.
+ * through the closest exit to heal fully, then repeats. Drains tower
+ * energy at negligible creep cost.
  */
 
 import { travelToRoom } from '../lib/travel';
@@ -12,7 +12,6 @@ import { travelToRoom } from '../lib/travel';
 interface AttritionMemory {
   role: 'attrition';
   targetRoom: string;
-  retreatDir?: ExitConstant;
   phase: 'attriting' | 'retreating';
   sourceRoom: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
@@ -42,37 +41,17 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // Record which door we entered through
-  if (creep.room.name === mem.targetRoom && !mem.retreatDir) {
-    const exits = Game.map.describeExits(creep.room.name);
-    if (exits) {
-      for (const dirStr in exits) {
-        if (exits[dirStr] === mem.sourceRoom) {
-          mem.retreatDir = parseInt(dirStr) as ExitConstant;
-          break;
-        }
-      }
-    }
-  }
-
-  // ── Attriting phase: sit near door, take damage ──
+  // ── Attriting phase: sit tight, retreat when HP low ──
   if (mem.phase === 'attriting') {
     if (creep.hits / creep.hitsMax < RETREAT_HP_RATIO) {
       mem.phase = 'retreating';
-      return true;
-    }
-
-    if (mem.retreatDir) {
-      const exit = creep.pos.findClosestByPath(mem.retreatDir);
-      if (exit && creep.pos.getRangeTo(exit) > 2) {
-        creep.moveTo(exit, { maxRooms: 1 });
-      }
     }
     return true;
   }
 
-  // ── Retreating phase: flee to safety and heal ──
+  // ── Retreating phase: flee through the closest exit ──
   if (creep.room.name !== mem.targetRoom || creep.room.name === mem.sourceRoom) {
+    // In safe room — heal until full, then go back
     if (creep.hits >= creep.hitsMax) {
       mem.phase = 'attriting';
       delete mem.route;
@@ -81,9 +60,10 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  if (mem.retreatDir) {
-    const exit = creep.pos.findClosestByPath(mem.retreatDir);
-    if (exit) creep.moveTo(exit, { maxRooms: 1 });
+  // In hostile room with low HP — find closest exit and flee
+  const exit = creep.pos.findClosestByPath(FIND_EXIT);
+  if (exit) {
+    creep.moveTo(exit, { maxRooms: 1 });
   }
 
   return true;
