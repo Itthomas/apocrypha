@@ -19,7 +19,7 @@ interface AttritionMemory {
   lastRoom?: string;
 }
 
-const RETREAT_HP_RATIO = 0.3;
+const RETREAT_HP_RATIO = 0.5;
 
 export function run(creep: Creep): boolean {
   const mem = creep.memory as AttritionMemory;
