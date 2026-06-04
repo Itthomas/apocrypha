@@ -23,6 +23,13 @@ export function run(creep: Creep): boolean {
   const mem = creep.memory as RemoteScoutMemory;
   mem.lastRoom = creep.room.name;
 
+  // ── Edge override: move toward room center if on the boundary ──
+  const pos = creep.pos;
+  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
+    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
+    return true;
+  }
+
   // Not in target room → travel there
   if (creep.room.name !== mem.targetRoom) {
     travelToRoom(creep, mem.targetRoom);
@@ -62,8 +69,9 @@ export function run(creep: Creep): boolean {
 
   entry.sources = sources.map(s => ({ x: s.pos.x, y: s.pos.y }));
 
-  // Compute joined-terrain road paths
-  const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
+  // Compute joined-terrain road paths from home spawn
+  const homeRoom = Game.rooms[mem.sourceRoom];
+  const spawn = homeRoom?.find(FIND_MY_SPAWNS)[0];
   if (!spawn) return false;
 
   // Path to each source
