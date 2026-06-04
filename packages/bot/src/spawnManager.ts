@@ -512,7 +512,7 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
         if (result === OK) { console.log(`[spawn] ${name} (reserver) → ${remoteName}`); return true; }
       }
 
-      // Remote worker — 2 per source in the remote room
+      // Remote worker — 2 per source, each assigned to a specific source
       const workerCount = countCreepsByTarget('remoteWorker', remoteName, room.name);
       const sourceCount = entry.sources?.length || 0;
       const maxWorkers = sourceCount * 2;
@@ -521,11 +521,29 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
         if (!body || body.length === 0) {
           logSpawnDebug(room.name, remoteName, 'noBody', { energy: room.energyAvailable, rcl });
         } else {
-          const name = `remoteWorker_${remoteName}_${Game.time}`;
+          // Assign to least-contended source
+          const srcCounts = new Array<number>(sourceCount).fill(0);
+          for (const n in Game.creeps) {
+            const c = Game.creeps[n];
+            if (c.memory.role === 'remoteWorker' && (c.memory as any).targetRoom === remoteName && (c.memory as any).sourceRoom === room.name) {
+              const idx = (c.memory as any).sourceIdx as number;
+              if (idx !== undefined && idx < sourceCount) srcCounts[idx]++;
+            }
+          }
+          let bestIdx = 0;
+          for (let i = 1; i < sourceCount; i++) {
+            if (srcCounts[i] < srcCounts[bestIdx]) bestIdx = i;
+          }
+          const src = entry.sources[bestIdx];
+          const name = `remoteWorker_${remoteName}_${bestIdx}_${Game.time}`;
           const result = spawn.spawnCreep(body, name, {
-            memory: { role: 'remoteWorker', targetRoom: remoteName, sourceRoom: room.name, spawnTick: Game.time, phase: 'going' }
+            memory: {
+              role: 'remoteWorker', targetRoom: remoteName, sourceRoom: room.name,
+              spawnTick: Game.time, task: 0, sourceIdx: bestIdx,
+              sourcePos: { x: src.x, y: src.y },
+            }
           });
-          if (result === OK) { console.log(`[spawn] ${name} (remoteWorker) → ${remoteName}`); return true; }
+          if (result === OK) { console.log(`[spawn] ${name} (remoteWorker) → ${remoteName} src=${bestIdx}`); return true; }
           else { logSpawnDebug(room.name, remoteName, 'spawnFail', { result, bodyCost: body.reduce((s: number, p: string) => s + BODYPART_COST[p as BodyPartConstant], 0), energy: room.energyAvailable }); }
         }
       } else {
