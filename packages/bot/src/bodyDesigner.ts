@@ -31,12 +31,7 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
   miner: [
     { minRcl: 1, primary: { work: 6, carry: 1, move: 3 }, fallback: { work: 6, carry: 1, move: 1 } },
   ],
-  hauler: [
-    { minRcl: 2, primary: { work: 0, carry: 4, move: 1 }, fallback: { work: 0, carry: 2, move: 1 } },
-    { minRcl: 3, primary: { work: 0, carry: 8, move: 2 }, fallback: { work: 0, carry: 4, move: 1 } },
-    { minRcl: 5, primary: { work: 0, carry: 16, move: 4 }, fallback: { work: 0, carry: 8, move: 2 } },
-    { minRcl: 7, primary: { work: 0, carry: 24, move: 6 }, fallback: { work: 0, carry: 16, move: 4 } },
-  ],
+  hauler: [] as BodyTier[],
   survivor: [
     { minRcl: 1, primary: { work: 8, carry: 16, move: 12 }, fallback: { work: 6, carry: 14, move: 10 } },
     { minRcl: 1, primary: { work: 6, carry: 14, move: 10 }, fallback: { work: 4, carry: 8, move: 6 } },
@@ -151,6 +146,15 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
   if (role === 'attacker' || role === 'attrition') {
     if (rcl < 3) return null;
     return getCombatBody(role, energyAvailable);
+  }
+
+  // Hauler: 2:1 carry:move, at most 1/2 of max energy capacity
+  if (role === 'hauler' && energyCap !== undefined) {
+    const budget = Math.floor(energyCap / 2);
+    const blocksPerEnergy = Math.floor(budget / 150); // CARRY×2 + MOVE = 150e
+    const blocksPerParts = Math.floor(MAX_CREEP_PARTS / 3);
+    const blocks = Math.max(1, Math.min(blocksPerEnergy, blocksPerParts));
+    return bodyFromSpec({ carry: blocks * 2, move: blocks });
   }
 
   const tiers = BODY_TIERS[role];
