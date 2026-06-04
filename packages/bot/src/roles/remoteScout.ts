@@ -48,7 +48,7 @@ export function run(creep: Creep): boolean {
   if (!rooms || !rooms[mem.targetRoom]) return false;
 
   const entry = rooms[mem.targetRoom];
-  if (entry.phase !== 'scouting') return false;
+  if (!entry) return false;
 
   const controller = creep.room.controller;
 
