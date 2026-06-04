@@ -385,11 +385,12 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
   const targets = (Memory.rooms[room.name] as any)?.attackTargets;
   if (!targets) return false;
 
-  // Attacker: 1 per target room
-  for (let targetRoom of (targets.attacker || [])) {
-    targetRoom = sanitizeRoomName(targetRoom);
-    if (isCombatCreepAlive('attacker', targetRoom)) continue;
-    const rcl = room.controller?.level ?? 0;
+  const rcl = room.controller?.level ?? 0;
+
+  // Attacker
+  const attackerTargets = normalizeTargets(targets.attacker);
+  for (const [targetRoom, quota] of attackerTargets) {
+    if (countCombatCreeps('attacker', targetRoom) >= quota) continue;
     const body = getBody('attacker', rcl, room.energyAvailable, room.energyCapacityAvailable);
     if (!body || body.length === 0) continue;
     const name = `attacker_${targetRoom}_${Game.time}`;
@@ -402,11 +403,10 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
     }
   }
 
-  // Attrition: 1 per target room
-  for (let targetRoom of (targets.attrition || [])) {
-    targetRoom = sanitizeRoomName(targetRoom);
-    if (isCombatCreepAlive('attrition', targetRoom)) continue;
-    const rcl = room.controller?.level ?? 0;
+  // Attrition
+  const attritionTargets = normalizeTargets(targets.attrition);
+  for (const [targetRoom, quota] of attritionTargets) {
+    if (countCombatCreeps('attrition', targetRoom) >= quota) continue;
     const body = getBody('attrition', rcl, room.energyAvailable, room.energyCapacityAvailable);
     if (!body || body.length === 0) continue;
     const name = `attrition_${targetRoom}_${Game.time}`;
@@ -428,13 +428,23 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
   return false;
 }
 
-/** Check if a combat creep with the given role and target is alive globally */
-function isCombatCreepAlive(role: string, targetRoom: string): boolean {
+/** Normalize attack targets: array → {room: 1}, object kept as-is */
+function normalizeTargets(targets: any): Array<[string, number]> {
+  if (!targets) return [];
+  if (Array.isArray(targets)) {
+    return targets.map((r: string) => [sanitizeRoomName(r), 1] as [string, number]);
+  }
+  return Object.entries(targets).map(([r, q]) => [sanitizeRoomName(r), q as number] as [string, number]);
+}
+
+/** Count how many combat creeps with the given role and target are alive */
+function countCombatCreeps(role: string, targetRoom: string): number {
+  let count = 0;
   for (const name in Game.creeps) {
     const c = Game.creeps[name];
-    if (c.memory.role === role && (c.memory as any).targetRoom === targetRoom) return true;
+    if (c.memory.role === role && (c.memory as any).targetRoom === targetRoom) count++;
   }
-  return false;
+  return count;
 }
 
 // ── Colonization builder spawning ──
