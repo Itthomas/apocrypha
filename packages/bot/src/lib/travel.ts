@@ -15,9 +15,10 @@ const HOSTILE_EXPIRY = 10000;
 
 interface TravelMemory {
   targetRoom: string;
-  lastRoom?: string;   // last room the creep was in (set each tick)
+  lastRoom?: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
-  routeRoom?: string;  // room where route was computed
+  routeRoom?: string;
+  zoneMode?: 'respawn' | 'novice' | null;  // sticky: persists through hallways
 }
 
 /** Check whether a room name is currently blacklisted as hostile */
@@ -68,9 +69,15 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
     return true;
   }
 
-  // Detect zone mode from the creep's current room
-  const ownStatus = Game.map.getRoomStatus(creep.room.name).status;
-  const restrictTo = ownStatus === 'respawn' ? 'respawn' : ownStatus === 'novice' ? 'novice' : null;
+  // Detect zone mode from the creep's current room (sticky through hallways)
+  const roomStatus = Game.map.getRoomStatus(creep.room.name).status;
+  if (roomStatus === 'respawn' || roomStatus === 'novice') {
+    mem.zoneMode = roomStatus;
+  } else if (!isHallway(creep.room.name)) {
+    mem.zoneMode = null; // left the zone entirely — back to normal routing
+  }
+  // In a hallway: keep existing zoneMode (set from the zone we entered through)
+  const restrictTo = mem.zoneMode || null;
 
   // Invalidate route if we entered a room not matching the cached route head
   if (mem.route && mem.route.length > 0 && mem.routeRoom !== creep.room.name) {
