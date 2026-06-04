@@ -512,11 +512,11 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
         if (result === OK) { console.log(`[spawn] ${name} (reserver) → ${remoteName}`); return true; }
       }
 
-      // Remote worker — economy gated
+      // Remote worker — 2 per source in the remote room
       const workerCount = countCreepsByTarget('remoteWorker', remoteName, room.name);
-      const econ = (Memory.rooms[room.name] as any)?.economy as any;
-      const maxWorkers = econ?.avgVal ? haulerCapFromAvg(econ.avgVal) : 1;
-      if (workerCount < maxWorkers) {
+      const sourceCount = entry.sources?.length || 0;
+      const maxWorkers = sourceCount * 2;
+      if (maxWorkers > 0 && workerCount < maxWorkers) {
         const body = getBody('remoteWorker', rcl, room.energyAvailable, room.energyCapacityAvailable);
         if (body && body.length > 0) {
           const name = `remoteWorker_${remoteName}_${Game.time}`;
@@ -551,13 +551,6 @@ function countCreepsByTarget(role: string, targetRoom: string, sourceRoom: strin
         (c.memory as any).sourceRoom === sourceRoom) count++;
   }
   return count;
-}
-
-function haulerCapFromAvg(avg: number): number {
-  if (avg >= 1500) return 4;
-  if (avg >= 1000) return 3;
-  if (avg >= 500) return 2;
-  return 1;
 }
 
 function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
