@@ -92,6 +92,25 @@ export function run(creep: Creep): boolean {
   if (controller) {
     const ctrlResult = PathFinder.search(spawn.pos, { pos: controller.pos, range: 1 }, {
       maxRooms: 2, maxOps: 4000,
+      roomCallback: (roomName: string) => {
+        const costs = new PathFinder.CostMatrix();
+        const terrain = Game.map.getRoomTerrain(roomName);
+        for (let x = 0; x < 50; x++) {
+          for (let y = 0; y < 50; y++) {
+            const t = terrain.get(x, y);
+            if (t === TERRAIN_MASK_WALL) { costs.set(x, y, 255); continue; }
+            costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
+          }
+        }
+        const room = Game.rooms[roomName];
+        if (room) {
+          const roads = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
+          });
+          for (const r of roads) costs.set(r.pos.x, r.pos.y, 1);
+        }
+        return costs;
+      },
     });
     if (!ctrlResult.incomplete) {
       const cPath = ctrlResult.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
