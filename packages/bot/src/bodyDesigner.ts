@@ -58,6 +58,9 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
   // attrition: tough:heal:move = 5:1:3 (9 parts/block, 450e)
   attacker: [] as BodyTier[],
   attrition: [] as BodyTier[],
+
+  // Remote worker: 1:3:2 work:carry:move (6 parts/block, 250e)
+  remoteWorker: [] as BodyTier[],
 };
 
 const MAX_CREEP_PARTS = 50;
@@ -146,6 +149,15 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
   if (role === 'attacker' || role === 'attrition') {
     if (rcl < 3) return null;
     return getCombatBody(role, energyAvailable);
+  }
+
+  // Remote worker: 1:3:2 work:carry:move = 6 parts, 250e per block
+  if (role === 'remoteWorker') {
+    const blockCost = 250; // WORK + CARRY×3 + MOVE×2 = 100 + 150 + 100
+    const blocks = Math.floor(energyAvailable / blockCost);
+    const maxByParts = Math.floor(MAX_CREEP_PARTS / 6);
+    const n = Math.max(1, Math.min(blocks, maxByParts));
+    return bodyFromSpec({ work: n, carry: n * 3, move: n * 2 });
   }
 
   // Hauler: 2:1 carry:move, at most 1/2 of max energy capacity

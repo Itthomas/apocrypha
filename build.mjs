@@ -32,6 +32,9 @@ const modules = {
   'role.colonyBuilder':   'roles/colonyBuilder.ts',
   'role.attacker':        'roles/attacker.ts',
   'role.attrition':       'roles/attrition.ts',
+  'role.remoteScout':     'roles/remoteScout.ts',
+  'role.reserver':        'roles/reserver.ts',
+  'role.remoteWorker':    'roles/remoteWorker.ts',
   'spawnManager':         'spawnManager.ts',
   'bodyDesigner':         'bodyDesigner.ts',
   'constructionPlanner':  'constructionPlanner.ts',
@@ -43,6 +46,7 @@ const modules = {
   'role.scout':           'roles/scout.ts',
   'colonization.scoring': 'colonization/scoring.ts',
   'lib.travel':           'lib/travel.ts',
+  'remoteHarvesting':     'remoteHarvesting.ts',
 };
 
 // All source entry paths (used to detect cross-module imports)

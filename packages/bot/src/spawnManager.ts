@@ -478,6 +478,88 @@ function countCombatCreeps(role: string, targetRoom: string): number {
 
 const COLONY_BUILDER_MAX = 3;
 
+// ── Remote harvesting spawning ──
+
+function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
+  if ((room.controller?.level ?? 0) < 5) return false;
+
+  const rooms = (Memory.rooms[room.name] as any)?.remoteRooms;
+  if (!rooms) return false;
+  const rcl = room.controller?.level ?? 0;
+
+  for (const remoteName of Object.keys(rooms)) {
+    const entry = rooms[remoteName];
+    if (!entry) continue;
+
+    // Remote scout
+    if (entry.phase === 'scouting') {
+      if (isRemoteCreepAlive('remoteScout', room.name, remoteName)) continue;
+      const name = `remoteScout_${remoteName}_${Game.time}`;
+      const result = spawn.spawnCreep([MOVE], name, {
+        memory: { role: 'remoteScout', targetRoom: remoteName, sourceRoom: room.name, spawnTick: Game.time }
+      });
+      if (result === OK) { console.log(`[spawn] ${name} (remoteScout) → ${remoteName}`); return true; }
+    }
+
+    // Reserver
+    if (entry.phase === 'harvesting') {
+      const needed = (entry.reserveTicks ?? 0) < 4000;
+      if (needed && !isRemoteCreepAlive('reserver', room.name, remoteName)) {
+        const name = `reserver_${remoteName}_${Game.time}`;
+        const result = spawn.spawnCreep([CLAIM, CLAIM, MOVE, MOVE], name, {
+          memory: { role: 'reserver', targetRoom: remoteName, sourceRoom: room.name, spawnTick: Game.time }
+        });
+        if (result === OK) { console.log(`[spawn] ${name} (reserver) → ${remoteName}`); return true; }
+      }
+
+      // Remote worker — economy gated
+      const workerCount = countCreepsByTarget('remoteWorker', remoteName, room.name);
+      const econ = (Memory.rooms[room.name] as any)?.economy as any;
+      const maxWorkers = econ?.avgVal ? haulerCapFromAvg(econ.avgVal) : 1;
+      if (workerCount < maxWorkers) {
+        const body = getBody('remoteWorker', rcl, room.energyAvailable, room.energyCapacityAvailable);
+        if (body && body.length > 0) {
+          const name = `remoteWorker_${remoteName}_${Game.time}`;
+          const result = spawn.spawnCreep(body, name, {
+            memory: { role: 'remoteWorker', targetRoom: remoteName, sourceRoom: room.name, spawnTick: Game.time, phase: 'going' }
+          });
+          if (result === OK) { console.log(`[spawn] ${name} (remoteWorker) → ${remoteName}`); return true; }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+function isRemoteCreepAlive(role: string, sourceRoom: string, targetRoom: string): boolean {
+  for (const name in Game.creeps) {
+    const c = Game.creeps[name];
+    if (c.memory.role === role &&
+        (c.memory as any).targetRoom === targetRoom &&
+        (c.memory as any).sourceRoom === sourceRoom) return true;
+  }
+  return false;
+}
+
+function countCreepsByTarget(role: string, targetRoom: string, sourceRoom: string): number {
+  let count = 0;
+  for (const name in Game.creeps) {
+    const c = Game.creeps[name];
+    if (c.memory.role === role &&
+        (c.memory as any).targetRoom === targetRoom &&
+        (c.memory as any).sourceRoom === sourceRoom) count++;
+  }
+  return count;
+}
+
+function haulerCapFromAvg(avg: number): number {
+  if (avg >= 1500) return 4;
+  if (avg >= 1000) return 3;
+  if (avg >= 500) return 2;
+  return 1;
+}
+
 function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
   const col = Memory.colonization as any;
   if (col?.phase !== 'building') return false;
@@ -619,8 +701,11 @@ export function runSpawnManager(room: Room): void {
   // ── Colonization claimer ──
   if (trySpawnClaimer(room, spawns[0])) return;
 
-  // ── Combat: attack targets from room memory (1 attacker + 1 attrition per target) ──
+  // ── Combat: attack targets from room memory ──
   if (trySpawnCombat(room, spawns[0])) return;
+
+  // ── Remote harvesting ──
+  if (trySpawnRemote(room, spawns[0])) return;
 
   // ── Colonization builders (lowest priority) ──
   if (trySpawnColonyBuilder(room, spawns[0])) return;
