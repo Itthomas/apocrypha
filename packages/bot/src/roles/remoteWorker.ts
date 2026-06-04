@@ -106,54 +106,11 @@ export function run(creep: Creep): boolean {
 // ── Infrastructure ──
 
 function ensureRemoteInfrastructure(creep: Creep, mem: RemoteWorkerMemory): void {
-  const rooms = (Memory.rooms[mem.sourceRoom] as any)?.remoteRooms;
-  if (!rooms || !rooms[mem.targetRoom]) return;
-  const entry = rooms[mem.targetRoom];
-
-  // Place containers near each source
-  const sources = creep.room.find(FIND_SOURCES);
-  for (const s of sources) {
-    const containers = s.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: st => st.structureType === STRUCTURE_CONTAINER
-    });
-    if (containers.length === 0) {
-      // Place container at closest adjacent non-wall tile
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          if (dx === 0 && dy === 0) continue;
-          const tx = s.pos.x + dx, ty = s.pos.y + dy;
-          if (tx < 0 || tx > 49 || ty < 0 || ty > 49) continue;
-          if (creep.room.getTerrain().get(tx, ty) === TERRAIN_MASK_WALL) continue;
-          const existing = creep.room.lookForAt(LOOK_CONSTRUCTION_SITES, tx, ty);
-          if (existing.length > 0) continue;
-          if (creep.room.createConstructionSite(tx, ty, STRUCTURE_CONTAINER) === OK) return;
-        }
-      }
-    }
-  }
-
-  // Build any existing sites
+  // Build any existing construction sites (roads placed by orchestrator, containers later)
   const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
   if (site) {
     if (creep.build(site) === ERR_NOT_IN_RANGE) creep.moveTo(site);
     return;
-  }
-
-  // Place roads along precomputed paths
-  if (entry.roadPath?.sources) {
-    for (const path of entry.roadPath.sources) {
-      for (const tile of path) {
-        if (tile.room !== creep.room.name) continue;
-        const existing = creep.room.lookForAt(LOOK_STRUCTURES, tile.x, tile.y)
-          .concat(creep.room.lookForAt(LOOK_CONSTRUCTION_SITES, tile.x, tile.y) as any[]);
-        const hasRoad = existing.some((s: any) =>
-          s.structureType === STRUCTURE_ROAD
-        );
-        if (!hasRoad) {
-          if (creep.room.createConstructionSite(tile.x, tile.y, STRUCTURE_ROAD) === OK) return;
-        }
-      }
-    }
   }
 }
 

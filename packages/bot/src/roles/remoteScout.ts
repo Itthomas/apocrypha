@@ -60,8 +60,10 @@ export function run(creep: Creep): boolean {
     return false;
   }
 
-  // Occupied by someone else
-  if (controller.owner || (controller.reservation && controller.reservation.username !== (Memory as any).username)) {
+  // Occupied by someone else (not us)
+  const myUsername = (Game.rooms[mem.sourceRoom]?.controller?.owner as any)?.username;
+  const isOurs = controller.reservation?.username === myUsername;
+  if (controller.owner || (controller.reservation && !isOurs)) {
     entry.phase = 'occupied';
     console.log(`[remoteScout] ${mem.targetRoom} is occupied`);
     return false;

@@ -46,9 +46,14 @@ export function runRemoteHarvesting(): void {
       if (!entry) continue;
 
       // Check if phase needs to change
-      if (entry.phase === 'scouting' && entry.sources && entry.sources.length >= 2 && entry.roadPath) {
+      if (entry.phase === 'scouting' && entry.sources && entry.sources.length >= 1 && entry.roadPath) {
         entry.phase = 'harvesting';
         console.log(`[remote] ${remoteName} scouting complete — harvesting begins`);
+      }
+
+      // Place road construction sites every 50 ticks
+      if (entry.phase === 'harvesting' && entry.roadPath && Game.time % 50 === 17) {
+        placeRemoteRoads(room, remoteName, entry);
       }
     }
   }
@@ -115,4 +120,32 @@ export function countRemoteWorkers(homeRoom: string, remoteRoom: string): number
         (c.memory as any).sourceRoom === homeRoom) count++;
   }
   return count;
+}
+
+// ── Road placement ──
+
+function placeRemoteRoads(homeRoom: Room, remoteName: string, entry: any): void {
+  // Place roads along source paths
+  for (const path of (entry.roadPath?.sources || [])) {
+    for (const tile of path) {
+      placeRoadIfMissing(tile);
+    }
+  }
+  // Place roads along controller path
+  if (entry.controllerPath) {
+    for (const tile of entry.controllerPath) {
+      placeRoadIfMissing(tile);
+    }
+  }
+}
+
+function placeRoadIfMissing(tile: { x: number; y: number; room: string }): void {
+  const room = Game.rooms[tile.room];
+  if (!room) return; // no vision
+  // Already has a road or construction site?
+  const structures = room.lookForAt(LOOK_STRUCTURES, tile.x, tile.y);
+  if (structures.some((s: any) => s.structureType === STRUCTURE_ROAD)) return;
+  const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, tile.x, tile.y);
+  if (sites.length > 0) return;
+  room.createConstructionSite(tile.x, tile.y, STRUCTURE_ROAD);
 }
