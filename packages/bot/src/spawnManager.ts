@@ -86,6 +86,8 @@ interface EconomyMemory {
   samples: number[];
   /** Soft cap for survivors, mapped from moving average */
   softCap: number;
+  /** Latest unweighted average of the sample window */
+  avgVal: number;
   /** Next tick to collect a sample */
   nextSample: number;
 }
@@ -101,17 +103,20 @@ function econValToSoftCap(val: number): number {
   return 3;
 }
 
-function runEconomyTracker(room: Room): void {
-  // Only active when miners exist and no storage is built — the window
-  // between first miner spawn and storage construction.
-  if (room.storage) return;
-  const miners = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner');
-  if (miners.length === 0) return;
+/** Map the moving average of max container energy to a hauler quota */
+function econValToHaulerCap(val: number): number {
+  if (val >= 1500) return 4;
+  if (val >= 1000) return 3;
+  if (val >= 500) return 2;
+  return 1;
+}
 
+function runEconomyTracker(room: Room): void {
+  // Keep sampling across all phases; survivor soft cap only adjusted pre-storage.
   if (!Memory.rooms) (Memory as any).rooms = {};
   if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
-  if (!Memory.rooms[room.name].economy) {
-    Memory.rooms[room.name].economy = { samples: [], softCap: 8, nextSample: Game.time };
+  if (!(Memory.rooms[room.name] as any).economy) {
+    (Memory.rooms[room.name] as any).economy = { samples: [], softCap: 8, avgVal: 0, nextSample: Game.time };
   }
   const econ = (Memory.rooms[room.name] as any).economy as EconomyMemory;
 
@@ -138,16 +143,38 @@ function runEconomyTracker(room: Room): void {
   // Window not full yet — keep default cap
   if (econ.samples.length < ECO_WINDOW_SIZE) return;
 
-  // Compute unweighted average and map to soft cap
+  // Compute unweighted average and store for hauler quotas
   const sum = econ.samples.reduce((a, b) => a + b, 0);
   const avg = sum / econ.samples.length;
-  const newCap = econValToSoftCap(avg);
+  econ.avgVal = avg;
 
-  if (newCap !== econ.softCap) {
-    econ.softCap = newCap;
-    console.log(`[economy] softCap=${econ.softCap} (avg=${avg.toFixed(0)} energy)`);
+  // Survivor soft cap: only adjusted when no storage exists
+  if (!room.storage) {
+    const newCap = econValToSoftCap(avg);
+    if (newCap !== econ.softCap) {
+      econ.softCap = newCap;
+      console.log(`[economy] softCap=${econ.softCap} (avg=${avg.toFixed(0)} energy)`);
+    }
   }
 }
+/** Survivor at RCL ≤ 2: bump max to 8 when miners are active */
+function getHaulerMax(room: Room): number {
+  // Post-storage: use economy tracker average
+  if (room.storage) {
+    const econ = (Memory.rooms[room.name] as any)?.economy as EconomyMemory | undefined;
+    if (econ && econ.samples.length >= ECO_WINDOW_SIZE) {
+      return econValToHaulerCap(econ.avgVal);
+    }
+    return 1; // window not full yet — conservative
+  }
+  // Pre-storage: count source containers
+  return room.find(FIND_SOURCES).reduce((count, source) => {
+    return count + source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    }).length;
+  }, 0);
+}
+
 function survivorGateRcl3(room: Room): boolean {
   // Soft cap from economy tracker — don't spawn beyond what the
   // container buffer can sustain
@@ -510,20 +537,13 @@ export function runSpawnManager(room: Room): void {
   }
 
   // ── Regular roles (priority: survivor → miner → hauler → builder → upgrader) ──
-  // Count source containers for hauler quota (1 per container)
-  const sourceContainers = room.find(FIND_SOURCES).reduce((count, source) => {
-    return count + source.pos.findInRange(FIND_STRUCTURES, 1, {
-      filter: s => s.structureType === STRUCTURE_CONTAINER
-    }).length;
-  }, 0);
-
   const sourceCount = room.find(FIND_SOURCES).length;
   for (const quota of quotas) {
     const current = creepCounts[quota.role] || 0;
 
-    // Miner max is one per source. Hauler max is one per source container.
+    // Miner max is one per source. Hauler max: economy-based when storage exists.
     let effectiveMax = quota.role === 'miner' ? sourceCount
-      : quota.role === 'hauler' ? sourceContainers
+      : quota.role === 'hauler' ? getHaulerMax(room)
       : quota.maximum;
 
     // Survivor at RCL ≤ 2: bump max to 8 when miners are active
