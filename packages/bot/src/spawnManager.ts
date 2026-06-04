@@ -694,11 +694,11 @@ export function runSpawnManager(room: Room): void {
   // ── Colonization claimer ──
   if (trySpawnClaimer(room, spawns[0])) return;
 
+  // ── Remote harvesting (before combat) ──
+  if (trySpawnRemote(room, spawns[0])) return;
+
   // ── Combat: attack targets from room memory ──
   if (trySpawnCombat(room, spawns[0])) return;
-
-  // ── Remote harvesting ──
-  if (trySpawnRemote(room, spawns[0])) return;
 
   // ── Colonization builders (lowest priority) ──
   if (trySpawnColonyBuilder(room, spawns[0])) return;
