@@ -42,7 +42,7 @@ const TUNNEL_STRUCTURES: Set<BuildableStructureConstant> = new Set([
 ]);
 
 const IGNORE_STRUCTURES: Set<BuildableStructureConstant> = new Set([
-  STRUCTURE_ROAD,
+  STRUCTURE_ROAD, STRUCTURE_CONTROLLER,
 ]);
 
 export function run(creep: Creep): boolean {
