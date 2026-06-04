@@ -49,6 +49,7 @@ export function run(creep: Creep): boolean {
 
   const entry = rooms[mem.targetRoom];
   if (!entry) return false;
+  if (entry.phase !== 'scouting') return false;
 
   const controller = creep.room.controller;
 
@@ -68,9 +69,9 @@ export function run(creep: Creep): boolean {
 
   // Gather sources
   const sources = creep.room.find(FIND_SOURCES);
-  if (sources.length < 2) {
-    entry.phase = 'noController'; // not literally, but not worth harvesting
-    console.log(`[remoteScout] ${mem.targetRoom} has <2 sources`);
+  if (sources.length === 0) {
+    entry.phase = 'noSources';
+    console.log(`[remoteScout] ${mem.targetRoom} has no sources`);
     return false;
   }
 

@@ -8,6 +8,7 @@
  * harvesting:   reserver maintains reservation, remoteWorkers haul energy home
  * occupied:     controller is owned/reserved by someone else — skipped
  * noController: no controller present (highway, SK room) — can't harvest
+ * noSources:    room has zero sources — nothing to harvest
  */
 
 const REMOTE_RESERVE_THRESHOLD = 4000;
