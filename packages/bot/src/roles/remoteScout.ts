@@ -14,6 +14,7 @@ interface RemoteScoutMemory {
   role: 'remoteScout';
   targetRoom: string;
   sourceRoom: string;
+  arrived: boolean;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
   lastRoom?: string;
@@ -36,7 +37,13 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // In target room — gather data
+  // In target room — wait one tick for vision to stabilize, then gather data
+  if (!mem.arrived) {
+    mem.arrived = true;
+    return true;
+  }
+
+  // Gather data
   const rooms = (Memory.rooms[mem.sourceRoom] as any)?.remoteRooms;
   if (!rooms || !rooms[mem.targetRoom]) return false;
 

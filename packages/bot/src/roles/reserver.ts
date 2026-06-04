@@ -34,7 +34,7 @@ export function run(creep: Creep): boolean {
 
   const result = creep.reserveController(controller);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(controller);
+    creep.moveTo(controller, { maxRooms: 1 });
   } else if (result === OK) {
     // Update stored reservation tick estimate
     updateReserveTicks(mem.sourceRoom, mem.targetRoom, controller.reservation?.ticksToEnd || 0);
