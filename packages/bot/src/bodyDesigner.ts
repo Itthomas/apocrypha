@@ -76,9 +76,9 @@ function getCombatBody(role: string, energy: number): BodyPartConstant[] | null 
     partsPerBlock = 4; blockCost = 190;
     tough = 1; combat = 1; move = 2;
   } else {
-    // 5:1:3 tough:heal:move = 9 parts, 450e
-    partsPerBlock = 9; blockCost = 450;
-    tough = 5; combat = 1; move = 3;
+    // 4:1:3 tough:heal:move = 8 parts, 440e
+    partsPerBlock = 8; blockCost = 440;
+    tough = 4; combat = 1; move = 3;
   }
 
   const maxByEnergy = Math.floor(energy / blockCost);
