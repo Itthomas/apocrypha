@@ -86,32 +86,37 @@ export function run(creep: Creep): boolean {
 
   // Compute convergent road paths: controller first, then sources.
   // Each subsequent path treats previously-computed tiles as roads (cost 1).
+  // Plain terrain costs 2 to create a clear incentive to follow paths.
   const roadTiles = new Set<string>(); // "roomName,x,y" keys
 
-  // Path to controller first — becomes the trunk route
+  // Shared callback: terrain + existing roads
+  const makeCallback = (extraRoads?: Set<string>) => {
+    return (roomName: string) => {
+      const costs = new PathFinder.CostMatrix();
+      const terrain = Game.map.getRoomTerrain(roomName);
+      for (let x = 0; x < 50; x++) {
+        for (let y = 0; y < 50; y++) {
+          const t = terrain.get(x, y);
+          if (t === TERRAIN_MASK_WALL) { costs.set(x, y, 255); continue; }
+          if (extraRoads?.has(`${roomName},${x},${y}`)) { costs.set(x, y, 1); continue; }
+          costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 2);
+        }
+      }
+      // Existing roads are cost 1
+      const room = Game.rooms[roomName];
+      if (room) {
+        const roads = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_ROAD });
+        for (const r of roads) costs.set(r.pos.x, r.pos.y, 1);
+      }
+      return costs;
+    };
+  };
+
+  const opts = (extra?: Set<string>) => ({ maxRooms: 2, maxOps: 4000, plainCost: 2, roomCallback: makeCallback(extra) });
+
+  // Controller path — the trunk route
   if (controller) {
-    const ctrlResult = PathFinder.search(spawn.pos, { pos: controller.pos, range: 1 }, {
-      maxRooms: 2, maxOps: 4000,
-      roomCallback: (roomName: string) => {
-        const costs = new PathFinder.CostMatrix();
-        const terrain = Game.map.getRoomTerrain(roomName);
-        for (let x = 0; x < 50; x++) {
-          for (let y = 0; y < 50; y++) {
-            const t = terrain.get(x, y);
-            if (t === TERRAIN_MASK_WALL) { costs.set(x, y, 255); continue; }
-            costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
-          }
-        }
-        const room = Game.rooms[roomName];
-        if (room) {
-          const roads = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_ROAD
-          });
-          for (const r of roads) costs.set(r.pos.x, r.pos.y, 1);
-        }
-        return costs;
-      },
-    });
+    const ctrlResult = PathFinder.search(spawn.pos, { pos: controller.pos, range: 1 }, opts());
     if (!ctrlResult.incomplete) {
       const cPath = ctrlResult.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
       entry.controllerPath = cPath;
@@ -122,31 +127,7 @@ export function run(creep: Creep): boolean {
   // Source paths — each treats prior paths as roads
   const sourcePaths: Array<Array<{ x: number; y: number; room: string }>> = [];
   for (const s of sources) {
-    const result = PathFinder.search(spawn.pos, { pos: s.pos, range: 1 }, {
-      maxRooms: 2, maxOps: 4000,
-      roomCallback: (roomName: string) => {
-        const costs = new PathFinder.CostMatrix();
-        const terrain = Game.map.getRoomTerrain(roomName);
-        for (let x = 0; x < 50; x++) {
-          for (let y = 0; y < 50; y++) {
-            const t = terrain.get(x, y);
-            if (t === TERRAIN_MASK_WALL) { costs.set(x, y, 255); continue; }
-            // Prior computed paths are treated as roads (cost 1) — overrides everything
-            if (roadTiles.has(`${roomName},${x},${y}`)) { costs.set(x, y, 1); continue; }
-            costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
-          }
-        }
-        // Treat existing roads as cost 1 so paths converge on real infrastructure
-        const room = Game.rooms[roomName];
-        if (room) {
-          const roads = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_ROAD
-          });
-          for (const r of roads) costs.set(r.pos.x, r.pos.y, 1);
-        }
-        return costs;
-      },
-    });
+    const result = PathFinder.search(spawn.pos, { pos: s.pos, range: 1 }, opts(roadTiles));
     if (!result.incomplete) {
       const sPath = result.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
       sourcePaths.push(sPath);
