@@ -518,13 +518,18 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
       const maxWorkers = sourceCount * 2;
       if (maxWorkers > 0 && workerCount < maxWorkers) {
         const body = getBody('remoteWorker', rcl, room.energyAvailable, room.energyCapacityAvailable);
-        if (body && body.length > 0) {
+        if (!body || body.length === 0) {
+          logSpawnDebug(room.name, remoteName, 'noBody', { energy: room.energyAvailable, rcl });
+        } else {
           const name = `remoteWorker_${remoteName}_${Game.time}`;
           const result = spawn.spawnCreep(body, name, {
             memory: { role: 'remoteWorker', targetRoom: remoteName, sourceRoom: room.name, spawnTick: Game.time, phase: 'going' }
           });
           if (result === OK) { console.log(`[spawn] ${name} (remoteWorker) → ${remoteName}`); return true; }
+          else { logSpawnDebug(room.name, remoteName, 'spawnFail', { result, bodyCost: body.reduce((s: number, p: string) => s + BODYPART_COST[p as BodyPartConstant], 0), energy: room.energyAvailable }); }
         }
+      } else {
+        logSpawnDebug(room.name, remoteName, 'quota', { workerCount, maxWorkers });
       }
     }
   }
@@ -551,6 +556,11 @@ function countCreepsByTarget(role: string, targetRoom: string, sourceRoom: strin
         (c.memory as any).sourceRoom === sourceRoom) count++;
   }
   return count;
+}
+
+function logSpawnDebug(sourceRoom: string, remoteRoom: string, reason: string, data: any): void {
+  if (!Memory._spawnDebug) (Memory as any)._spawnDebug = {};
+  (Memory as any)._spawnDebug[`${sourceRoom}→${remoteRoom}`] = { tick: Game.time, reason, ...data };
 }
 
 function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
