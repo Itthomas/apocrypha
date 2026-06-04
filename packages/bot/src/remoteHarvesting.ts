@@ -12,6 +12,8 @@
  */
 
 const REMOTE_RESERVE_THRESHOLD = 4000;
+import { getBlueprintPositions } from './blueprint';
+
 
 // ── Room name helpers ──
 
@@ -142,10 +144,23 @@ function placeRemoteRoads(homeRoom: Room, remoteName: string, entry: any): void 
 function placeRoadIfMissing(tile: { x: number; y: number; room: string }): void {
   const room = Game.rooms[tile.room];
   if (!room) return; // no vision
+
+  // Skip tiles inside the source room's blueprint footprint
+  if (isWithinBlueprint(room, tile.x, tile.y)) return;
+
   // Already has a road or construction site?
   const structures = room.lookForAt(LOOK_STRUCTURES, tile.x, tile.y);
   if (structures.some((s: any) => s.structureType === STRUCTURE_ROAD)) return;
   const sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, tile.x, tile.y);
   if (sites.length > 0) return;
   room.createConstructionSite(tile.x, tile.y, STRUCTURE_ROAD);
+}
+
+/** Check if a tile falls within the static blueprint of the room's spawn */
+function isWithinBlueprint(room: Room, x: number, y: number): boolean {
+  const spawn = room.find(FIND_MY_SPAWNS)[0];
+  if (!spawn) return false;
+  const offX = x - spawn.pos.x;
+  const offY = y - spawn.pos.y;
+  return getBlueprintPositions().has(`${offX},${offY}`);
 }

@@ -84,32 +84,53 @@ export function run(creep: Creep): boolean {
   const spawn = homeRoom?.find(FIND_MY_SPAWNS)[0];
   if (!spawn) return false;
 
-  // Path to each source
-  const sourcePaths: Array<Array<{ x: number; y: number; room: string }>> = [];
-  for (const s of sources) {
-    const result = PathFinder.search(spawn.pos, { pos: s.pos, range: 1 }, {
-      maxRooms: 2,
-      maxOps: 4000,
+  // Compute convergent road paths: controller first, then sources.
+  // Each subsequent path treats previously-computed tiles as roads (cost 1).
+  const roadTiles = new Set<string>(); // "roomName,x,y" keys
+
+  // Path to controller first — becomes the trunk route
+  if (controller) {
+    const ctrlResult = PathFinder.search(spawn.pos, { pos: controller.pos, range: 1 }, {
+      maxRooms: 2, maxOps: 4000,
     });
-    if (!result.incomplete) {
-      sourcePaths.push(result.path.map(p => ({ x: p.x, y: p.y, room: p.roomName })));
+    if (!ctrlResult.incomplete) {
+      const cPath = ctrlResult.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
+      entry.controllerPath = cPath;
+      for (const t of cPath) roadTiles.add(`${t.room},${t.x},${t.y}`);
     }
   }
 
-  // Path to controller
-  let controllerPath: Array<{ x: number; y: number; room: string }> | null = null;
-  if (controller) {
-    const ctrlResult = PathFinder.search(spawn.pos, { pos: controller.pos, range: 1 }, {
-      maxRooms: 2,
-      maxOps: 4000,
+  // Source paths — each treats prior paths as roads
+  const sourcePaths: Array<Array<{ x: number; y: number; room: string }>> = [];
+  for (const s of sources) {
+    const result = PathFinder.search(spawn.pos, { pos: s.pos, range: 1 }, {
+      maxRooms: 2, maxOps: 4000,
+      roomCallback: (roomName: string) => {
+        const costs = new PathFinder.CostMatrix();
+        const terrain = Game.map.getRoomTerrain(roomName);
+        for (let x = 0; x < 50; x++) {
+          for (let y = 0; y < 50; y++) {
+            const t = terrain.get(x, y);
+            if (t === TERRAIN_MASK_WALL) costs.set(x, y, 255);
+            else {
+              // Prior paths are treated as roads (cost 1)
+              if (roadTiles.has(`${roomName},${x},${y}`)) costs.set(x, y, 1);
+              else costs.set(x, y, t === TERRAIN_MASK_SWAMP ? 5 : 1);
+            }
+          }
+        }
+        return costs;
+      },
     });
-    if (!ctrlResult.incomplete) {
-      controllerPath = ctrlResult.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
+    if (!result.incomplete) {
+      const sPath = result.path.map(p => ({ x: p.x, y: p.y, room: p.roomName }));
+      sourcePaths.push(sPath);
+      for (const t of sPath) roadTiles.add(`${t.room},${t.x},${t.y}`);
     }
   }
 
   entry.roadPath = { sources: sourcePaths };
-  entry.controllerPath = controllerPath;
+  entry.controllerPath = entry.controllerPath || null;
   entry.reserveTicks = 0;
 
   console.log(`[remoteScout] ${mem.targetRoom}: ${sources.length} sources, ${sourcePaths.length} paths computed`);
