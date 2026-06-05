@@ -210,11 +210,11 @@ function tryRepairNearby(creep: Creep, mem: RemoteWorkerMemory): boolean {
     mem.repairTargetId = undefined;
   }
 
-  // Find closest damaged road or container below full health
+  // Find closest damaged road or container below 2/3 health to start repairing
   const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
     filter: s => {
       if (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) {
-        return s.hits < s.hitsMax;
+        return s.hits < s.hitsMax * 0.67;
       }
       return false;
     }
