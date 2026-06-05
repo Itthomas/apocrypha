@@ -25,7 +25,7 @@ export function run(creep: Creep): boolean {
 
   // Not in target room → travel there
   if (creep.room.name !== mem.targetRoom) {
-    travelToRoom(creep, mem.targetRoom);
+    travelToRoom(creep, mem.targetRoom, true);
     return true;
   }
 
