@@ -3,10 +3,11 @@
  *
  * Assigned to a specific source in a remote room. Two modes:
  *
- *   GATHERING: transit to assigned source, harvest until carry full
+ *   GATHERING: follow precomputed road path (moveByPath) to source,
+ *              harvest until carry full
  *   HAULING:   → build closest construction site (if any)
  *              → repair closest damaged road/container (< 2/3 health)
- *              → deposit energy in source room storage
+ *              → travelToRoom home, deposit energy in storage
  *
  * Task switching is persistent — tasks don't thrash between ticks.
  */
@@ -22,6 +23,7 @@ interface RemoteWorkerMemory {
   task: number;
   sourceIdx: number;
   sourcePos: { x: number; y: number };
+  cachedPath?: string;        // Room.serializePath result for moveByPath
   repairTargetId?: Id<Structure>;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
@@ -38,41 +40,48 @@ export function run(creep: Creep): boolean {
     const srcPos = mem.sourcePos;
     if (!srcPos) return false;
 
-    // Not in remote room → travel there
-    if (creep.room.name !== mem.targetRoom) {
-      travelToRoom(creep, mem.targetRoom);
+    // In remote room — harvest the assigned source
+    if (creep.room.name === mem.targetRoom) {
+      const source = creep.room.lookForAt(LOOK_SOURCES, srcPos.x, srcPos.y)[0];
+      if (!source) return false;
+
+      // Repair container when source is depleted
+      if (source.energy === 0) {
+        const container = creep.pos.findInRange(FIND_STRUCTURES, 1, {
+          filter: s => s.structureType === STRUCTURE_CONTAINER
+        })[0];
+        if (container && container.hits < container.hitsMax) {
+          creep.repair(container);
+          return true;
+        }
+      }
+
+      // Harvest until carry is full
+      if (creep.store.getFreeCapacity() > 0 && source.energy > 0) {
+        if (creep.harvest(source) === ERR_NOT_IN_RANGE) creep.moveTo(source);
+        return true;
+      }
+
+      // Carry full → switch to hauling
+      delete mem.cachedPath;
+      mem.task = TASK.HAUL;
       return true;
     }
 
-    // In remote room — harvest the assigned source
-    const source = creep.room.lookForAt(LOOK_SOURCES, srcPos.x, srcPos.y)[0];
-    if (!source) return false;
-
-    // Repair container when source is depleted
-    if (source.energy === 0) {
-      const container = creep.pos.findInRange(FIND_STRUCTURES, 1, {
-        filter: s => s.structureType === STRUCTURE_CONTAINER
-      })[0];
-      if (container && container.hits < container.hitsMax) {
-        creep.repair(container);
+    // Not at source — follow cached road path via moveByPath
+    if (!mem.cachedPath) {
+      mem.cachedPath = buildCachedPath(mem);
+      if (!mem.cachedPath) {
+        travelToRoom(creep, mem.targetRoom);
         return true;
       }
     }
-
-    // Harvest until carry is full
-    if (creep.store.getFreeCapacity() > 0 && source.energy > 0) {
-      if (creep.harvest(source) === ERR_NOT_IN_RANGE) creep.moveTo(source);
-      return true;
-    }
-
-    // Carry full → switch to hauling
-    mem.task = TASK.HAUL;
+    creep.moveByPath(Room.deserializePath(mem.cachedPath));
     return true;
   }
 
   // ── HAULING ──
   if (mem.task === TASK.HAUL) {
-    // Empty → switch back to gathering
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       mem.task = TASK.GATHER;
       return true;
@@ -118,10 +127,27 @@ export function run(creep: Creep): boolean {
   return false;
 }
 
+// ── Cached path ──
+
+function buildCachedPath(mem: RemoteWorkerMemory): string | null {
+  const rooms = (Memory.rooms[mem.sourceRoom] as any)?.remoteRooms;
+  if (!rooms || !rooms[mem.targetRoom]) return null;
+  const entry = rooms[mem.targetRoom];
+  const roadPath = entry?.roadPath?.sources?.[mem.sourceIdx];
+  if (!roadPath || roadPath.length === 0) return null;
+
+  // Convert stored {x, y, room} tiles to RoomPosition[]
+  const positions: RoomPosition[] = [];
+  for (const tile of roadPath) {
+    positions.push(new RoomPosition(tile.x, tile.y, tile.room));
+  }
+
+  return Room.serializePath(positions);
+}
+
 // ── Repair ──
 
 function tryRepairNearby(creep: Creep, mem: RemoteWorkerMemory): boolean {
-  // If we have a locked repair target, stick to it
   if (mem.repairTargetId) {
     const target = Game.getObjectById(mem.repairTargetId);
     if (target && target.hits < target.hitsMax * 0.67) {
@@ -131,7 +157,6 @@ function tryRepairNearby(creep: Creep, mem: RemoteWorkerMemory): boolean {
     mem.repairTargetId = undefined;
   }
 
-  // Find closest damaged road or container below 2/3 health
   const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
     filter: s => {
       if (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) {
