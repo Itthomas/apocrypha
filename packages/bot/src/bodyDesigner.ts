@@ -156,7 +156,8 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
     const blockCost = 350; // WORK + CARRY×3 + MOVE×2 = 100 + 150 + 100
     const blocks = Math.floor(energyAvailable / blockCost);
     const maxByParts = Math.floor(MAX_CREEP_PARTS / 6);
-    const n = Math.max(1, Math.min(blocks, maxByParts));
+    const n = Math.min(blocks, maxByParts, 8);
+    if (n < 4) return null;
     return bodyFromSpec({ work: n, carry: n * 3, move: n * 2 });
   }
 
