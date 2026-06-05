@@ -3,13 +3,14 @@
  *
  * Assigned to a specific source in a remote room. Two modes:
  *
- *   GATHERING: follow precomputed road path (moveByPath) to source,
- *              harvest until carry full
+ *   GATHERING: follow precomputed road path to source, harvest until
+ *              carry full. Always moves toward source even when empty.
  *   HAULING:   → build closest construction site (if any)
- *              → repair closest damaged road/container (< 2/3 health)
+ *              → repair closest damaged road/container (lock until full)
  *              → travelToRoom home, deposit energy in storage
  *
- * Task switching is persistent — tasks don't thrash between ticks.
+ * Loot override picks up nearby dropped energy/tombstones (survivor pattern).
+ * Repair locks onto target until it's fully healed or energy runs out.
  */
 
 import { travelToRoom } from '../lib/travel';
@@ -23,8 +24,7 @@ interface RemoteWorkerMemory {
   task: number;
   sourceIdx: number;
   sourcePos: { x: number; y: number };
-  cachedPath?: string;        // Room.serializePath result for moveByPath
-  pathIndex?: number;         // current step along cached path
+  pathIndex?: number;
   repairTargetId?: Id<Structure>;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
@@ -35,6 +35,26 @@ export function run(creep: Creep): boolean {
   const mem = creep.memory as RemoteWorkerMemory;
   if (mem.task === undefined) mem.task = TASK.GATHER;
   mem.lastRoom = creep.room.name;
+
+  // ── Loot override: pick up nearby dropped energy/tombstones ──
+  if (creep.store.getUsedCapacity() < creep.store.getCapacity() * 0.8) {
+    const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+      filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+    });
+    const tombstone = creep.pos.findClosestByRange(FIND_TOMBSTONES, {
+      filter: t => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+    });
+    const distDropped = dropped ? creep.pos.getRangeTo(dropped) : Infinity;
+    const distTomb = tombstone ? creep.pos.getRangeTo(tombstone) : Infinity;
+    if (distDropped <= 8 && distDropped <= distTomb) {
+      if (creep.pickup(dropped!) === ERR_NOT_IN_RANGE) creep.moveTo(dropped!);
+      return true;
+    }
+    if (distTomb <= 8) {
+      if (creep.withdraw(tombstone!, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) creep.moveTo(tombstone!);
+      return true;
+    }
+  }
 
   // ── GATHERING ──
   if (mem.task === TASK.GATHER) {
@@ -57,22 +77,31 @@ export function run(creep: Creep): boolean {
         }
       }
 
-      // Harvest until carry is full
+      // Always move toward source
+      if (creep.pos.getRangeTo(srcPos.x, srcPos.y) > 1) {
+        creep.moveTo(new RoomPosition(srcPos.x, srcPos.y, mem.targetRoom));
+        return true;
+      }
+
+      // Harvest if not full
       if (creep.store.getFreeCapacity() > 0 && source.energy > 0) {
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) creep.moveTo(source);
+        creep.harvest(source);
         return true;
       }
 
       // Carry full → switch to hauling
-      delete mem.pathIndex;
-      mem.task = TASK.HAUL;
+      if (creep.store.getFreeCapacity() === 0) {
+        delete mem.pathIndex;
+        mem.task = TASK.HAUL;
+        return true;
+      }
+
       return true;
     }
 
-    // Not at source — follow precomputed road path step by step
+    // Not at source — follow precomputed road path
     if (mem.pathIndex === undefined) mem.pathIndex = 0;
     if (!followRoadPath(creep, mem)) {
-      // Path exhausted or invalid — fall back to travelToRoom
       delete mem.pathIndex;
       travelToRoom(creep, mem.targetRoom);
     }
@@ -82,6 +111,7 @@ export function run(creep: Creep): boolean {
   // ── HAULING ──
   if (mem.task === TASK.HAUL) {
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      delete mem.repairTargetId;
       mem.task = TASK.GATHER;
       return true;
     }
@@ -95,8 +125,8 @@ export function run(creep: Creep): boolean {
       }
     }
 
-    // Priority 2: repair damaged road or container (< 2/3 health)
-    if (creep.room.name === mem.targetRoom) {
+    // Priority 2: repair damaged road or container (lock until full)
+    if (creep.room.name === mem.targetRoom || creep.room.name === mem.sourceRoom) {
       if (tryRepairNearby(creep, mem)) return true;
     }
 
@@ -128,7 +158,6 @@ export function run(creep: Creep): boolean {
 
 // ── Road path following ──
 
-/** Step along the precomputed road path. Returns true if a step was taken. */
 function followRoadPath(creep: Creep, mem: RemoteWorkerMemory): boolean {
   const rooms = (Memory.rooms[mem.sourceRoom] as any)?.remoteRooms;
   if (!rooms || !rooms[mem.targetRoom]) return false;
@@ -138,7 +167,6 @@ function followRoadPath(creep: Creep, mem: RemoteWorkerMemory): boolean {
 
   let idx = mem.pathIndex || 0;
 
-  // Advance past tiles we've already passed or are on
   while (idx < roadPath.length) {
     const tile = roadPath[idx];
     if (tile.room === creep.room.name && creep.pos.getRangeTo(tile.x, tile.y) <= 1) {
@@ -148,12 +176,10 @@ function followRoadPath(creep: Creep, mem: RemoteWorkerMemory): boolean {
     break;
   }
 
-  // Reached the end
   if (idx >= roadPath.length) return false;
 
   const next = roadPath[idx];
   if (next.room !== creep.room.name) {
-    // Next tile is in another room — walk toward the exit in our current room
     const exitDir = Game.map.findExit(creep.room.name, next.room);
     if (exitDir !== ERR_NO_PATH && exitDir !== ERR_INVALID_ARGS) {
       const exit = creep.pos.findClosestByPath(exitDir);
@@ -170,19 +196,25 @@ function followRoadPath(creep: Creep, mem: RemoteWorkerMemory): boolean {
 // ── Repair ──
 
 function tryRepairNearby(creep: Creep, mem: RemoteWorkerMemory): boolean {
+  // Lock onto current repair target until fully healed or out of energy
   if (mem.repairTargetId) {
     const target = Game.getObjectById(mem.repairTargetId);
-    if (target && target.hits < target.hitsMax * 0.67) {
+    if (target && target.hits < target.hitsMax) {
+      if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        mem.repairTargetId = undefined;
+        return false;
+      }
       if (creep.repair(target) === ERR_NOT_IN_RANGE) creep.moveTo(target);
       return true;
     }
     mem.repairTargetId = undefined;
   }
 
+  // Find closest damaged road or container below full health
   const damaged = creep.pos.findClosestByPath(FIND_STRUCTURES, {
     filter: s => {
       if (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) {
-        return s.hits < s.hitsMax * 0.67;
+        return s.hits < s.hitsMax;
       }
       return false;
     }
