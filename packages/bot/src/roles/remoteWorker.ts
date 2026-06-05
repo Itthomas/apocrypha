@@ -24,6 +24,7 @@ interface RemoteWorkerMemory {
   sourceIdx: number;
   sourcePos: { x: number; y: number };
   cachedPath?: string;        // Room.serializePath result for moveByPath
+  pathIndex?: number;         // current step along cached path
   repairTargetId?: Id<Structure>;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
@@ -63,20 +64,18 @@ export function run(creep: Creep): boolean {
       }
 
       // Carry full → switch to hauling
-      delete mem.cachedPath;
+      delete mem.pathIndex;
       mem.task = TASK.HAUL;
       return true;
     }
 
-    // Not at source — follow cached road path via moveByPath
-    if (!mem.cachedPath) {
-      mem.cachedPath = buildCachedPath(mem);
-      if (!mem.cachedPath) {
-        travelToRoom(creep, mem.targetRoom);
-        return true;
-      }
+    // Not at source — follow precomputed road path step by step
+    if (mem.pathIndex === undefined) mem.pathIndex = 0;
+    if (!followRoadPath(creep, mem)) {
+      // Path exhausted or invalid — fall back to travelToRoom
+      delete mem.pathIndex;
+      travelToRoom(creep, mem.targetRoom);
     }
-    creep.moveByPath(Room.deserializePath(mem.cachedPath));
     return true;
   }
 
@@ -127,22 +126,45 @@ export function run(creep: Creep): boolean {
   return false;
 }
 
-// ── Cached path ──
+// ── Road path following ──
 
-function buildCachedPath(mem: RemoteWorkerMemory): string | null {
+/** Step along the precomputed road path. Returns true if a step was taken. */
+function followRoadPath(creep: Creep, mem: RemoteWorkerMemory): boolean {
   const rooms = (Memory.rooms[mem.sourceRoom] as any)?.remoteRooms;
-  if (!rooms || !rooms[mem.targetRoom]) return null;
+  if (!rooms || !rooms[mem.targetRoom]) return false;
   const entry = rooms[mem.targetRoom];
   const roadPath = entry?.roadPath?.sources?.[mem.sourceIdx];
-  if (!roadPath || roadPath.length === 0) return null;
+  if (!roadPath || roadPath.length === 0) return false;
 
-  // Convert stored {x, y, room} tiles to RoomPosition[]
-  const positions: RoomPosition[] = [];
-  for (const tile of roadPath) {
-    positions.push(new RoomPosition(tile.x, tile.y, tile.room));
+  let idx = mem.pathIndex || 0;
+
+  // Advance past tiles we've already passed or are on
+  while (idx < roadPath.length) {
+    const tile = roadPath[idx];
+    if (tile.room === creep.room.name && creep.pos.getRangeTo(tile.x, tile.y) <= 1) {
+      idx++;
+      continue;
+    }
+    break;
   }
 
-  return Room.serializePath(positions);
+  // Reached the end
+  if (idx >= roadPath.length) return false;
+
+  const next = roadPath[idx];
+  if (next.room !== creep.room.name) {
+    // Next tile is in another room — walk toward the exit in our current room
+    const exitDir = Game.map.findExit(creep.room.name, next.room);
+    if (exitDir !== ERR_NO_PATH && exitDir !== ERR_INVALID_ARGS) {
+      const exit = creep.pos.findClosestByPath(exitDir);
+      if (exit) creep.moveTo(exit, { maxRooms: 1 });
+    }
+  } else {
+    creep.moveTo(new RoomPosition(next.x, next.y, next.room));
+  }
+
+  mem.pathIndex = idx;
+  return true;
 }
 
 // ── Repair ──
