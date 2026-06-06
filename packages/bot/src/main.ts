@@ -72,13 +72,15 @@ export function loop(): void {
       var mem = Memory.creeps[name];
       telemetry.logCreepDeath(name, mem);
 
-      // If a traveler died non-naturally in a hostile room, blacklist it
+      // If a traveler was killed shortly after entering a room, blacklist it.
+      // This catches border ambushes (tower fire, keeper lairs) without
+      // permanently routing around rooms a creep passed through peacefully.
       var role = mem.role as string | undefined;
       if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder' || role === 'attacker' || role === 'attrition' || role === 'remoteScout' || role === 'reserver' || role === 'remoteWorker')) {
-        var spawnTick = mem.spawnTick as number | undefined;
         var lastRoom = mem.lastRoom as string | undefined;
-        var diedNaturally = spawnTick ? (Game.time - spawnTick >= 1500) : false;
-        if (!diedNaturally && lastRoom) {
+        var enteredRoomTick = mem.enteredRoomTick as number | undefined;
+        var ambushed = enteredRoomTick ? (Game.time - enteredRoomTick <= 10) : false;
+        if (ambushed && lastRoom) {
           var room = Game.rooms[lastRoom];
           if (room) {
             var hostiles = room.find(FIND_HOSTILE_CREEPS);
@@ -88,7 +90,7 @@ export function loop(): void {
               (Memory.hostileRooms as any)[lastRoom] = Game.time;
             }
           } else {
-            // No vision, but non-natural death is strong evidence — mark it
+            // No vision — the room killed us before we could see what's there
             if (!Memory.hostileRooms) Memory.hostileRooms = {};
             (Memory.hostileRooms as any)[lastRoom] = Game.time;
           }

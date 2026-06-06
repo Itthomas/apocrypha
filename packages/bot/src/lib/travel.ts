@@ -16,6 +16,10 @@ const HOSTILE_EXPIRY = 10000;
 interface TravelMemory {
   targetRoom: string;
   lastRoom?: string;
+  /** Tick the creep entered its current room (set by travelToRoom).
+   * Used by the death handler to only blacklist rooms where the creep
+   * was killed shortly after entering (ambush at the border). */
+  enteredRoomTick?: number;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
   zoneMode?: 'respawn' | 'novice' | null;  // sticky: persists through hallways
@@ -56,7 +60,11 @@ function isHallway(roomName: string): boolean {
 export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false): boolean {
   const mem = creep.memory as TravelMemory;
 
-  // Track last room for death-based hostile detection
+  // Track room entry for hostile detection: only blacklist rooms where a
+  // creep was killed shortly after entering (ambush), not after a long stay.
+  if (mem.lastRoom !== creep.room.name) {
+    mem.enteredRoomTick = Game.time;
+  }
   mem.lastRoom = creep.room.name;
 
   // Already there
