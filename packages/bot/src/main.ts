@@ -80,7 +80,8 @@ export function loop(): void {
         var lastRoom = mem.lastRoom as string | undefined;
         var enteredRoomTick = mem.enteredRoomTick as number | undefined;
         var ambushed = enteredRoomTick ? (Game.time - enteredRoomTick <= 10) : false;
-        if (ambushed && lastRoom) {
+        // Never blacklist hallways — they're mandatory transit corridors
+        if (ambushed && lastRoom && !libTravel.isHallway(lastRoom)) {
           var room = Game.rooms[lastRoom];
           if (room) {
             var hostiles = room.find(FIND_HOSTILE_CREEPS);

@@ -39,12 +39,27 @@ export function isHostile(roomName: string): boolean {
 }
 
 /** Check whether a room name refers to a hallway (x or y divisible by 10) */
-function isHallway(roomName: string): boolean {
+export function isHallway(roomName: string): boolean {
   const match = roomName.match(/^([WE])(\d+)([NS])(\d+)$/);
   if (!match) return false;
   const x = (match[1] === 'W' ? -1 : 1) * parseInt(match[2], 10);
   const y = (match[3] === 'N' ? 1 : -1) * parseInt(match[4], 10);
   return Math.abs(x) % 10 === 0 || Math.abs(y) % 10 === 0;
+}
+
+/** Check whether a room is a sector center — the 9 rooms around (x%10≈5, y%10≈5)
+ * where NPC bots (Source Keepers, Invaders) spawn. These are dangerous transit
+ * rooms that scouts and haulers should route around when possible. */
+export function isSectorCenter(roomName: string): boolean {
+  const match = roomName.match(/^([WE])(\d+)([NS])(\d+)$/);
+  if (!match) return false;
+  const x = (match[1] === 'W' ? -1 : 1) * parseInt(match[2], 10);
+  const y = (match[3] === 'N' ? 1 : -1) * parseInt(match[4], 10);
+  const ax = Math.abs(x), ay = Math.abs(y);
+  // Highways are not sector centers
+  if (ax % 10 === 0 || ay % 10 === 0) return false;
+  const rx = ax % 10, ry = ay % 10;
+  return rx >= 4 && rx <= 6 && ry >= 4 && ry <= 6;
 }
 
 /**
@@ -56,8 +71,10 @@ function isHallway(roomName: string): boolean {
  * novice rooms only through novice+hallways, normal rooms skip both.
  *
  * @param skipHostileAvoid If true, don't filter out hostile or owned rooms (combat).
+ * @param avoidCenter If true, try to route around sector center rooms where
+ *   NPC bots spawn. Falls back to routing through centers if no other path exists.
  */
-export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false): boolean {
+export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid: boolean = false, avoidCenter: boolean = false): boolean {
   const mem = creep.memory as TravelMemory;
 
   // Track room entry for hostile detection: only blacklist rooms where a
@@ -95,8 +112,8 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
 
   // Compute or reuse route
   if (!mem.route || mem.route.length === 0) {
-    const route = Game.map.findRoute(creep.room.name, targetRoom, {
-      routeCallback(roomName) {
+    const makeRouteCallback = (blockCenters: boolean) => {
+      return (roomName: string) => {
         const status = Game.map.getRoomStatus(roomName).status;
 
         // In a respawn or novice zone: only route through matching rooms + hallways
@@ -106,13 +123,26 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
         if (!restrictTo && (status === 'respawn' || status === 'novice')) return Infinity;
 
         if (!skipHostileAvoid && isHostile(roomName)) return Infinity;
+        if (blockCenters && isSectorCenter(roomName)) return Infinity;
         if (!skipHostileAvoid && Game.rooms[roomName]) {
           const ctrl = Game.rooms[roomName].controller;
           if (ctrl && ctrl.owner && !ctrl.my) return Infinity;
         }
         return 1;
-      }
+      };
+    };
+
+    let route = Game.map.findRoute(creep.room.name, targetRoom, {
+      routeCallback: makeRouteCallback(avoidCenter)
     });
+
+    // If center avoidance blocked all paths, fall back to routing through centers
+    if (route === ERR_NO_PATH && avoidCenter) {
+      route = Game.map.findRoute(creep.room.name, targetRoom, {
+        routeCallback: makeRouteCallback(false)
+      });
+    }
+
     if (route === ERR_NO_PATH) return false;
 
     mem.route = route;
