@@ -19,6 +19,7 @@
  */
 
 import { canFitBlueprint } from './colonization/scoring';
+import { isHallway } from './lib/travel';
 
 const DEADLINE_TICKS = 3000;
 const COOLDOWN_TICKS = 10000;
@@ -105,6 +106,11 @@ export function runColonization(): void {
   const spawnRoom = findRcl5Room();
   if (!spawnRoom) return;
 
+  // Determine source room's zone so we only scout rooms that creeps
+  // can actually reach.  Respawn → respawn+hallways only, novice →
+  // novice+hallways only, normal → normal+hallways (skip the others).
+  const zoneStatus = Game.map.getRoomStatus(spawnRoom.name).status;
+
   // ── Start new scouting wave ──
   const [sx, sy] = parseRoomXY(spawnRoom.name);
 
@@ -118,6 +124,14 @@ export function runColonization(): void {
       if (name === spawnRoom.name) continue;
       if (isHighwayOrCenter(rx, ry)) continue;
       if (owned.has(name)) continue;
+      // Zone filter: only scout rooms reachable from the source room's zone.
+      // Uses the same rules as travelToRoom's routeCallback.
+      try {
+        const candStatus = Game.map.getRoomStatus(name).status;
+        if (zoneStatus === 'respawn' && candStatus !== 'respawn' && !isHallway(name)) continue;
+        if (zoneStatus === 'novice' && candStatus !== 'novice' && !isHallway(name)) continue;
+        if (zoneStatus === 'normal' && (candStatus === 'respawn' || candStatus === 'novice')) continue;
+      } catch (_e) { continue; }
       try {
         if (canFitBlueprint(name)) {
           eligibleRooms.push(name);
