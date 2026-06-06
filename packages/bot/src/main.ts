@@ -11,8 +11,7 @@ var telemetry = require('telemetry');
 var constructionPlanner = require('constructionPlanner');
 var roleMiner = require('role.miner');
 var roleHauler = require('role.hauler');
-var roleBuilder = require('role.builder');
-var roleUpgrader = require('role.upgrader');
+
 var roleSurvivor = require('role.survivor');
 var roleScout = require('role.scout');
 var roleClaimer = require('role.claimer');
@@ -36,8 +35,7 @@ function getRoleModule(role: string) {
     roleModules = {
       'miner': roleMiner,
       'hauler': roleHauler,
-      'builder': roleBuilder,
-      'upgrader': roleUpgrader,
+
       'survivor': roleSurvivor,
       'scout': roleScout,
       'claimer': roleClaimer,

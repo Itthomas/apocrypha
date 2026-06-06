@@ -25,8 +25,6 @@ const modules = {
   'main':                 'main.ts',
   'role.miner':           'roles/miner.ts',
   'role.hauler':          'roles/hauler.ts',
-  'role.builder':         'roles/builder.ts',
-  'role.upgrader':        'roles/upgrader.ts',
   'role.survivor':        'roles/survivor.ts',
   'role.claimer':         'roles/claimer.ts',
   'role.colonyBuilder':   'roles/colonyBuilder.ts',
