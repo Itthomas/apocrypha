@@ -88,13 +88,15 @@ export function runColonization(): void {
   // ── Scouting: active wave — check if all rooms scored or deadline expired ──
   if (col?.active && !col?.phase) {
     if (Game.time >= col.deadline) { finishWave(); return; }
-    const targets: string[] = col.scoutTargets || [];
-    // All rooms either scored, rejected, or have scouts that hit retry limit
-    if (targets.length > 0 && targets.every((r: string) => {
-      const s = col.scoutState?.[r];
-      return s?.done || (s?.respawns >= 5);
-    })) {
-      finishWave();
+    const perRoom = col.scoutTargets as Record<string, string[]> | undefined;
+    if (perRoom) {
+      const allTargets = Object.keys(perRoom).reduce((flat: string[], src: string) => flat.concat(perRoom[src]), []);
+      if (allTargets.length > 0 && allTargets.every((r: string) => {
+        const s = col.scoutState?.[r];
+        return s?.done || (s?.respawns >= 5);
+      })) {
+        finishWave();
+      }
     }
     return;
   }
@@ -103,62 +105,86 @@ export function runColonization(): void {
   const ownedRooms = countOwnedRooms();
   if (ownedRooms >= Game.gcl.level) return;
 
-  const spawnRoom = findRcl5Room();
-  if (!spawnRoom) return;
+  const sourceRooms = getRcl5Rooms();
+  if (sourceRooms.length === 0) return;
 
-  // Determine source room's zone so we only scout rooms that creeps
-  // can actually reach.  Respawn → respawn+hallways only, novice →
-  // novice+hallways only, normal → normal+hallways (skip the others).
-  const zoneStatus = Game.map.getRoomStatus(spawnRoom.name).status;
-
-  // ── Start new scouting wave ──
-  const [sx, sy] = parseRoomXY(spawnRoom.name);
-
-  // Generate ±grid and pre-screen for blueprint viability
-  const eligibleRooms: string[] = [];
   const owned = getOwnedRoomNames();
-  for (let dx = -SCOUT_GRID_RADIUS; dx <= SCOUT_GRID_RADIUS; dx++) {
-    for (let dy = -SCOUT_GRID_RADIUS; dy <= SCOUT_GRID_RADIUS; dy++) {
-      const rx = sx + dx, ry = sy + dy;
-      const name = roomName(rx, ry);
-      if (name === spawnRoom.name) continue;
-      if (isHighwayOrCenter(rx, ry)) continue;
-      if (owned.has(name)) continue;
-      // Zone filter: only scout rooms reachable from the source room's zone.
-      // Uses the same rules as travelToRoom's routeCallback.
-      try {
-        const candStatus = Game.map.getRoomStatus(name).status;
-        if (zoneStatus === 'respawn' && candStatus !== 'respawn' && !isHallway(name)) continue;
-        if (zoneStatus === 'novice' && candStatus !== 'novice' && !isHallway(name)) continue;
-        if (zoneStatus === 'normal' && (candStatus === 'respawn' || candStatus === 'novice')) continue;
-      } catch (_e) { continue; }
-      try {
-        if (canFitBlueprint(name)) {
-          eligibleRooms.push(name);
+
+  // ── Per-room candidate generation with conflict resolution ──
+  // Assignment map: candidate room → { sourceRoom, cost }
+  // When two source rooms claim the same candidate, the closer one wins
+  // (by findRoute room count).
+  const assignment: Record<string, { sourceRoom: string }> = {};
+
+  for (const srcRoom of sourceRooms) {
+    const zoneStatus = Game.map.getRoomStatus(srcRoom.name).status;
+    const [sx, sy] = parseRoomXY(srcRoom.name);
+
+    for (let dx = -SCOUT_GRID_RADIUS; dx <= SCOUT_GRID_RADIUS; dx++) {
+      for (let dy = -SCOUT_GRID_RADIUS; dy <= SCOUT_GRID_RADIUS; dy++) {
+        const rx = sx + dx, ry = sy + dy;
+        const name = roomName(rx, ry);
+        if (name === srcRoom.name) continue;
+        if (isHighwayOrCenter(rx, ry)) continue;
+        if (owned.has(name)) continue;
+
+        // Zone compatibility
+        try {
+          const candStatus = Game.map.getRoomStatus(name).status;
+          if (zoneStatus === 'respawn' && candStatus !== 'respawn' && !isHallway(name)) continue;
+          if (zoneStatus === 'novice' && candStatus !== 'novice' && !isHallway(name)) continue;
+          if (zoneStatus === 'normal' && (candStatus === 'respawn' || candStatus === 'novice')) continue;
+        } catch (_e) { continue; }
+
+        // Blueprint viability
+        try { if (!canFitBlueprint(name)) continue; }
+        catch (_e) { continue; }
+
+        // Already assigned: keep the closer source room
+        const existing = assignment[name];
+        if (existing) {
+          // Tie-break by route distance. findRoute is room-level BFS — cheap.
+          const prevRoute = Game.map.findRoute(existing.sourceRoom, name);
+          const prevCost = prevRoute === ERR_NO_PATH ? Infinity : prevRoute.length;
+          const newRoute = Game.map.findRoute(srcRoom.name, name);
+          const newCost = newRoute === ERR_NO_PATH ? Infinity : newRoute.length;
+          if (newCost < prevCost) {
+            assignment[name] = { sourceRoom: srcRoom.name };
+          }
+        } else {
+          assignment[name] = { sourceRoom: srcRoom.name };
         }
-      } catch (_e) {
-        // Room doesn't exist (e.g. outside world bounds) — skip
       }
     }
   }
 
-  if (eligibleRooms.length === 0) {
+  if (Object.keys(assignment).length === 0) {
     console.log(`[colonization] No eligible rooms in ±${SCOUT_GRID_RADIUS} grid`);
     Memory.colonization = { cooldownUntil: Game.time + COOLDOWN_TICKS } as any;
     return;
   }
 
+  // ── Build per-room scoutTargets and scoutState ──
+  const scoutTargets: Record<string, string[]> = {};
   const scoutState: Record<string, any> = {};
-  for (const room of eligibleRooms) {
-    scoutState[room] = {
-      targetRoom: room,
+
+  for (const candName of Object.keys(assignment)) {
+    const src = assignment[candName].sourceRoom;
+    if (!scoutTargets[src]) scoutTargets[src] = [];
+    scoutTargets[src].push(candName);
+
+    // scoutState already uses spawnedFrom for the source room
+    scoutState[candName] = {
+      targetRoom: candName,
       respawns: 0,
       name: '',
-      spawnedFrom: spawnRoom.name,
+      spawnedFrom: src,
     };
   }
 
-  console.log(`[colonization] Pre-screened ${eligibleRooms.length} rooms — scouting wave begins`);
+  const totalTargets = Object.keys(assignment).length;
+  const sourceList = Object.keys(scoutTargets).join(', ');
+  console.log(`[colonization] ${totalTargets} targets from ${sourceRooms.length} source rooms (${sourceList}) — scouting wave begins`);
 
   Memory.colonization = {
     active: true,
@@ -166,7 +192,7 @@ export function runColonization(): void {
     cooldownUntil: 0,
     candidates: {},
     bestRoom: null,
-    scoutTargets: eligibleRooms,
+    scoutTargets,
     scoutState,
   } as any;
 }
@@ -203,12 +229,13 @@ function countOwnedRooms(): number {
   return count;
 }
 
-function findRcl5Room(): Room | null {
+function getRcl5Rooms(): Room[] {
+  const rooms: Room[] = [];
   for (const _rn in Game.rooms) {
     const room = Game.rooms[_rn];
-    if (room.controller?.my && (room.controller.level ?? 0) >= 5) return room;
+    if (room.controller?.my && (room.controller.level ?? 0) >= 5) rooms.push(room);
   }
-  return null;
+  return rooms;
 }
 
 // ── Wave completion ──
@@ -232,8 +259,9 @@ function finishWave(): void {
   }
 
   // ── Best room valid — transition to claimer phase ──
-  const sourceRoom = findRcl5Room();
-  if (!sourceRoom) {
+  // Use the source room that dispatched the winning scout
+  const state = col.scoutState?.[best.name];
+  if (!state?.spawnedFrom) {
     col.cooldownUntil = Game.time + COOLDOWN_TICKS;
     delete col.active;
     return;
@@ -247,9 +275,9 @@ function finishWave(): void {
     room: best.name,
     spawnX: best.worldX,
     spawnY: best.worldY,
-    sourceRoom: sourceRoom.name,
+    sourceRoom: state.spawnedFrom,
   };
   col.bestRoom = best;
 
-  console.log(`[colonization] Scouting complete — claiming ${best.name} (score ${best.score}) from ${sourceRoom.name}`);
+  console.log(`[colonization] Scouting complete — claiming ${best.name} (score ${best.score}) from ${state.spawnedFrom}`);
 }

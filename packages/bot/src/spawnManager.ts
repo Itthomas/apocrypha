@@ -284,7 +284,7 @@ function trySpawnScout(room: Room, spawn: StructureSpawn): boolean {
   if (!col?.active || Game.time >= col.deadline) return false;
   if ((room.controller?.level ?? 0) < 5) return false;
 
-  const targets: string[] = col.scoutTargets || [];
+  const targets: string[] = (col.scoutTargets && col.scoutTargets[room.name]) || [];
   if (targets.length === 0) return false;
 
   for (const targetRoom of targets) {
