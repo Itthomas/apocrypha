@@ -149,11 +149,40 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
     mem.routeRoom = creep.room.name;
   }
 
-  // Navigate to the next exit
+  // Navigate to the next exit. If the room has hostiles with ATTACK or
+  // RANGED_ATTACK parts, overlay a danger CostMatrix to route around them.
+  // Cost gradient: 50 within attack range (1-4), 20 in buffer zone (5-6).
+  // Re-evaluated every tick — hostiles move, so no caching.
   const next = mem.route[0];
   const exit = creep.pos.findClosestByPath(next.exit);
   if (exit) {
-    creep.moveTo(exit, { maxRooms: 1 });
+    const hostiles = creep.room.find(FIND_HOSTILE_CREEPS, {
+      filter: c => c.getActiveBodyparts(ATTACK) > 0 || c.getActiveBodyparts(RANGED_ATTACK) > 0
+    });
+    if (hostiles.length > 0) {
+      const opts: any = { maxRooms: 1 };
+      opts.costCallback = function(_roomName: string, costs: PathFinder.CostMatrix): PathFinder.CostMatrix {
+        for (const hostile of hostiles) {
+          const hx = hostile.pos.x, hy = hostile.pos.y;
+          for (let dx = -6; dx <= 6; dx++) {
+            for (let dy = -6; dy <= 6; dy++) {
+              const x = hx + dx, y = hy + dy;
+              if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+              const dist = Math.max(Math.abs(dx), Math.abs(dy));
+              if (dist === 0) continue;
+              const existing = costs.get(x, y);
+              if (existing >= 255) continue; // walls stay walls
+              if (dist <= 4 && existing < 50) costs.set(x, y, 50);
+              else if (dist <= 6 && existing < 20) costs.set(x, y, 20);
+            }
+          }
+        }
+        return costs;
+      };
+      creep.moveTo(exit, opts);
+    } else {
+      creep.moveTo(exit, { maxRooms: 1 });
+    }
   }
 
   return true;
