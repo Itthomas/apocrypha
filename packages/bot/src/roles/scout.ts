@@ -68,7 +68,7 @@ export function run(creep: Creep): boolean {
   // ════════════════════════════════════════════════════════
   if (mem.phase === 'traveling') {
     if (creep.room.name !== mem.targetRoom) {
-      travelToRoom(creep, mem.targetRoom);
+      travelToRoom(creep, mem.targetRoom, false, true);
       return true;
     }
     mem.phase = 'scoring';
@@ -132,7 +132,7 @@ export function run(creep: Creep): boolean {
     // ── Returning to target room after exploring ──
     if (mem.returningToTarget) {
       if (creep.room.name !== mem.targetRoom) {
-        travelToRoom(creep, mem.targetRoom);
+        travelToRoom(creep, mem.targetRoom, false, true);
         return true;
       }
       mem.adjacentIndex = idx + 1;
@@ -146,7 +146,7 @@ export function run(creep: Creep): boolean {
 
     // ── Heading into adjacent room ──
     if (creep.room.name !== adjRoom) {
-      travelToRoom(creep, adjRoom);
+      travelToRoom(creep, adjRoom, false, true);
       return true;
     }
 
