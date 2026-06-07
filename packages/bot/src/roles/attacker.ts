@@ -49,6 +49,15 @@ export function run(creep: Creep): boolean {
   const mem = creep.memory as AttackerMemory;
   mem.lastRoom = creep.room.name;
 
+  // ── Edge override: move toward room center if on the boundary.
+  //     Runs in both travel and combat phases so the creep never
+  //     gets stuck on a room edge after entering the target room.
+  const pos = creep.pos;
+  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
+    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
+    return true;
+  }
+
   // Not in target room → travel there, attack anything in range along the way
   if (creep.room.name !== mem.targetRoom) {
     const tiers = getPriorityTiers(creep);

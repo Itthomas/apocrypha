@@ -466,7 +466,7 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
 
     // Attacker for defend phase — one per remote room
     if (entry.phase === 'defend') {
-      if (countCreepsByTarget('defender', remoteName, room.name) === 0) {
+      if (countCreepsByTarget('defender', remoteName, room.name) < 2) {
         const body = getBody('defender', rcl, room.energyAvailable, room.energyCapacityAvailable);
         if (body && body.length > 0) {
           const name = `defender_${remoteName}_${Game.time}`;
