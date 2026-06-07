@@ -110,6 +110,10 @@ export function runColonization(): void {
 
   const owned = getOwnedRoomNames();
 
+  // Exclude rooms in the remote-harvesting buffer (1-2 hops from owned rooms).
+  // These are better served by remote workers than full colonization.
+  const excluded = getRemoteBuffer(owned);
+
   // ── Per-room candidate generation with conflict resolution ──
   // Assignment map: candidate room → { sourceRoom, cost }
   // When two source rooms claim the same candidate, the closer one wins
@@ -127,6 +131,7 @@ export function runColonization(): void {
         if (name === srcRoom.name) continue;
         if (isHighwayOrCenter(rx, ry)) continue;
         if (owned.has(name)) continue;
+        if (excluded.has(name)) continue;
 
         // Zone compatibility
         try {
@@ -198,6 +203,43 @@ export function runColonization(): void {
 }
 
 // ── Helpers ──
+
+/** Build a set of rooms that share exit connectivity with our owned rooms
+ * (up to 2 hops). These are remote-harvesting territory — colonizing them
+ * would compete with our economy. */
+function getRemoteBuffer(owned: Set<string>): Set<string> {
+  const excluded = new Set<string>();
+  const level1 = new Set<string>();
+
+  // Level 1: direct exit neighbors of owned rooms
+  for (const roomName of owned) {
+    const exits = Game.map.describeExits(roomName);
+    if (!exits) continue;
+    for (const _dir in exits) {
+      const adj = exits[_dir];
+      if (!adj || owned.has(adj)) continue;
+      const [ax, ay] = parseRoomXY(adj);
+      if (isHighwayOrCenter(ax, ay)) continue;
+      level1.add(adj);
+      excluded.add(adj);
+    }
+  }
+
+  // Level 2: exit neighbors of Level 1 rooms
+  for (const roomName of level1) {
+    const exits = Game.map.describeExits(roomName);
+    if (!exits) continue;
+    for (const _dir in exits) {
+      const adj = exits[_dir];
+      if (!adj || owned.has(adj) || level1.has(adj)) continue;
+      const [ax, ay] = parseRoomXY(adj);
+      if (isHighwayOrCenter(ax, ay)) continue;
+      excluded.add(adj);
+    }
+  }
+
+  return excluded;
+}
 
 /** Check if a room is a highway (x or y % 10 == 0) or sector center (x and y within ±1 of %10==5) */
 function isHighwayOrCenter(x: number, y: number): boolean {
