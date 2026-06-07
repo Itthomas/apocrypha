@@ -62,6 +62,29 @@ export function runRemoteHarvesting(): void {
       if (entry.phase === 'harvesting') {
         entry.reserveTicks = Math.max(0, (entry.reserveTicks || 0) - 1);
       }
+
+      // Defend: check for hostiles that threaten the remote room.
+      // Invaders place cores; hostile players send claim creeps.
+      // Only works when we have vision (a reserver or worker is present).
+      if ((entry.phase === 'harvesting' || entry.phase === 'defend') && Game.rooms[remoteName]) {
+        const remoteRoom = Game.rooms[remoteName];
+        const dangerous = remoteRoom.find(FIND_HOSTILE_CREEPS, {
+          filter: (c: Creep) =>
+            c.getActiveBodyparts(CLAIM) > 0 ||
+            c.getActiveBodyparts(ATTACK) > 0 ||
+            c.getActiveBodyparts(RANGED_ATTACK) > 0
+        });
+        const structures = remoteRoom.find(FIND_HOSTILE_STRUCTURES);
+        const underAttack = dangerous.length > 0 || structures.length > 0;
+
+        if (underAttack && entry.phase !== 'defend') {
+          entry.phase = 'defend';
+          console.log(`[remote] ${remoteName} hostiles detected — phase defend`);
+        } else if (!underAttack && entry.phase === 'defend') {
+          entry.phase = 'harvesting';
+          console.log(`[remote] ${remoteName} clear — phase harvesting`);
+        }
+      }
     }
   }
 }

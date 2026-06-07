@@ -464,7 +464,21 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
       if (result === OK) { console.log(`[spawn] ${name} (remoteScout) → ${remoteName}`); return true; }
     }
 
-    // Reserver
+    // Attacker for defend phase — one per remote room
+    if (entry.phase === 'defend') {
+      if (countCreepsByTarget('attacker', remoteName, room.name) === 0) {
+        const body = getBody('attacker', rcl, room.energyAvailable, room.energyCapacityAvailable);
+        if (body && body.length > 0) {
+          const name = `attacker_${remoteName}_${Game.time}`;
+          const result = spawn.spawnCreep(body, name, {
+            memory: { role: 'attacker', targetRoom: remoteName, spawnTick: Game.time }
+          });
+          if (result === OK) { console.log(`[spawn] ${name} (attacker) → ${remoteName} (defend)`); return true; }
+        }
+      }
+    }
+
+    // Reserver and remote workers — only during harvesting
     if (entry.phase === 'harvesting') {
       const needed = (entry.reserveTicks ?? 0) < 4000;
       if (needed && !isRemoteCreepAlive('reserver', room.name, remoteName)) {
