@@ -30,6 +30,7 @@ const modules = {
   'role.colonyBuilder':   'roles/colonyBuilder.ts',
   'role.attacker':        'roles/attacker.ts',
   'role.attrition':       'roles/attrition.ts',
+  'role.defender':        'roles/defender.ts',
   'role.remoteScout':     'roles/remoteScout.ts',
   'role.reserver':        'roles/reserver.ts',
   'role.remoteWorker':    'roles/remoteWorker.ts',

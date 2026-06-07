@@ -151,6 +151,17 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
     return getCombatBody(role, energyAvailable);
   }
 
+  // Defender: same 1:1:2 tough:attack:move ratio as attacker, capped at 5 blocks
+  // for fast spawning. 5 blocks = 950e, spawns in ~10 ticks at RCL 6.
+  if (role === 'defender') {
+    if (rcl < 3) return null;
+    const BLOCKS = 5;
+    const BLOCK_COST = 190; // tough(10) + attack(80) + move×2(100)
+    const blocks = Math.min(BLOCKS, Math.floor(energyAvailable / BLOCK_COST));
+    if (blocks < 1) return null;
+    return bodyFromSpec({ tough: blocks, attack: blocks, move: blocks * 2 });
+  }
+
   // Remote worker: 1:3:2 work:carry:move = 6 parts, 250e per block
   if (role === 'remoteWorker') {
     const blockCost = 350; // WORK + CARRY×3 + MOVE×2 = 100 + 150 + 100

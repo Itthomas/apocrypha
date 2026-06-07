@@ -466,14 +466,14 @@ function trySpawnRemote(room: Room, spawn: StructureSpawn): boolean {
 
     // Attacker for defend phase — one per remote room
     if (entry.phase === 'defend') {
-      if (countCreepsByTarget('attacker', remoteName, room.name) === 0) {
-        const body = getBody('attacker', rcl, room.energyAvailable, room.energyCapacityAvailable);
+      if (countCreepsByTarget('defender', remoteName, room.name) === 0) {
+        const body = getBody('defender', rcl, room.energyAvailable, room.energyCapacityAvailable);
         if (body && body.length > 0) {
-          const name = `attacker_${remoteName}_${Game.time}`;
+          const name = `defender_${remoteName}_${Game.time}`;
           const result = spawn.spawnCreep(body, name, {
-            memory: { role: 'attacker', targetRoom: remoteName, spawnTick: Game.time }
+            memory: { role: 'defender', targetRoom: remoteName, spawnTick: Game.time }
           });
-          if (result === OK) { console.log(`[spawn] ${name} (attacker) → ${remoteName} (defend)`); return true; }
+          if (result === OK) { console.log(`[spawn] ${name} (defender) → ${remoteName} (defend)`); return true; }
         }
       }
     }

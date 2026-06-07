@@ -18,6 +18,7 @@ var roleClaimer = require('role.claimer');
 var roleColonyBuilder = require('role.colonyBuilder');
 var roleAttacker = require('role.attacker');
 var roleAttrition = require('role.attrition');
+var roleDefender = require('role.defender');
 var roleRemoteScout = require('role.remoteScout');
 var roleReserver = require('role.reserver');
 var roleRemoteWorker = require('role.remoteWorker');
@@ -42,6 +43,7 @@ function getRoleModule(role: string) {
       'colonyBuilder': roleColonyBuilder,
       'attacker': roleAttacker,
       'attrition': roleAttrition,
+      'defender': roleDefender,
       'remoteScout': roleRemoteScout,
       'reserver': roleReserver,
       'remoteWorker': roleRemoteWorker,
@@ -76,7 +78,7 @@ export function loop(): void {
       // This catches border ambushes (tower fire, keeper lairs) without
       // permanently routing around rooms a creep passed through peacefully.
       var role = mem.role as string | undefined;
-      if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder' || role === 'attacker' || role === 'attrition' || role === 'remoteScout' || role === 'reserver' || role === 'remoteWorker')) {
+      if (role && (role === 'scout' || role === 'claimer' || role === 'colonyBuilder' || role === 'attacker' || role === 'attrition' || role === 'defender' || role === 'remoteScout' || role === 'reserver' || role === 'remoteWorker')) {
         var lastRoom = mem.lastRoom as string | undefined;
         var enteredRoomTick = mem.enteredRoomTick as number | undefined;
         var ambushed = enteredRoomTick ? (Game.time - enteredRoomTick <= 10) : false;
@@ -128,7 +130,7 @@ export function loop(): void {
 
     // Emergency: if no miners, non-hauler creeps harvest to keep colony alive.
     // Haulers are skipped — they have no WORK parts and rely on container withdrawal.
-    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition' && role !== 'remoteScout' && role !== 'reserver' && role !== 'remoteWorker' && countMiners(creep.room) === 0) {
+    if (role !== 'miner' && role !== 'hauler' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition' && role !== 'defender' && role !== 'remoteScout' && role !== 'reserver' && role !== 'remoteWorker' && countMiners(creep.room) === 0) {
       roleSurvivor.run(creep);
       continue;
     }
@@ -141,7 +143,7 @@ export function loop(): void {
     
     // If role couldn't find work, harvest as fallback.
     // Scouts are excluded — they either explore or stand still.
-    if (!acted && role !== 'miner' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition' && role !== 'remoteScout' && role !== 'reserver' && role !== 'remoteWorker') {
+    if (!acted && role !== 'miner' && role !== 'scout' && role !== 'claimer' && role !== 'colonyBuilder' && role !== 'attacker' && role !== 'attrition' && role !== 'defender' && role !== 'remoteScout' && role !== 'reserver' && role !== 'remoteWorker') {
       roleSurvivor.run(creep);
     }
   }
