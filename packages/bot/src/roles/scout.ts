@@ -24,6 +24,7 @@ interface ScoutMemory {
   targetRoom: string;
   sourceRoom: string;
   respawns: number;
+  spawnTick?: number;
   lastRoom?: string;
   route?: Array<{ exit: ExitConstant; room: string }>;
   routeRoom?: string;
@@ -69,6 +70,13 @@ export function run(creep: Creep): boolean {
   if (mem.phase === 'traveling') {
     if (creep.room.name !== mem.targetRoom) {
       travelToRoom(creep, mem.targetRoom, false, true);
+      return true;
+    }
+    // Arrived — but if we took too long, the room is too far. Abandon it.
+    const age = Game.time - (mem.spawnTick || 0);
+    if (age > 550) {
+      markDone(col, mem.targetRoom);
+      mem.phase = 'done';
       return true;
     }
     mem.phase = 'scoring';

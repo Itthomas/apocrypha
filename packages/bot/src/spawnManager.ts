@@ -340,7 +340,7 @@ function trySpawnClaimer(room: Room, spawn: StructureSpawn): boolean {
   if (claimers.length > 0) return false;
 
   const name = `claimer_${Game.time}`;
-  const result = spawn.spawnCreep([CLAIM, MOVE, MOVE], name, {
+  const result = spawn.spawnCreep([CLAIM, MOVE, MOVE, MOVE, MOVE, MOVE], name, {
     memory: {
       role: 'claimer',
       targetRoom: ct.room,
