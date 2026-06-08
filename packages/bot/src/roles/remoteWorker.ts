@@ -103,7 +103,7 @@ export function run(creep: Creep): boolean {
     if (mem.pathIndex === undefined) mem.pathIndex = 0;
     if (!followRoadPath(creep, mem)) {
       delete mem.pathIndex;
-      travelToRoom(creep, mem.targetRoom);
+      travelToRoom(creep, mem.targetRoom, true);
     }
     return true;
   }
@@ -132,7 +132,7 @@ export function run(creep: Creep): boolean {
 
     // Priority 3: travel home and deposit
     if (creep.room.name !== mem.sourceRoom) {
-      travelToRoom(creep, mem.sourceRoom);
+      travelToRoom(creep, mem.sourceRoom, true);
       repairRoadUnderfoot(creep);
       return true;
     }
