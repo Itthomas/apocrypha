@@ -17,6 +17,12 @@ const MODULES_DIR = resolve(ROOT, 'dist/modules');
 const isLive = process.argv.includes('--live');
 const isLocal = process.argv.includes('--local') || !isLive;
 
+// Parse --branch <name> for live deploys (defaults to 'default')
+const branchIdx = process.argv.indexOf('--branch');
+const branch = branchIdx !== -1 && branchIdx + 1 < process.argv.length
+  ? process.argv[branchIdx + 1]
+  : 'default';
+
 if (!isLocal && !isLive) {
   console.error('[deploy] Use --local or --live');
   process.exit(1);
@@ -136,11 +142,11 @@ async function deployLive() {
       'Content-Type': 'application/json',
       'X-Token': token
     },
-    body: JSON.stringify({ branch: 'default', modules })
+    body: JSON.stringify({ branch, modules })
   });
 
   if (resp.ok) {
-    console.log(`[deploy] ✓ Live deploy (shard2) — ${Object.keys(modules).length} modules`);
+    console.log(`[deploy] ✓ Live deploy (${branch}) — ${Object.keys(modules).length} modules`);
   } else {
     console.error('[deploy] ✗ Failed:', resp.status, await resp.text());
   }
