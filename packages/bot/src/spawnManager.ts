@@ -695,6 +695,15 @@ export function runSpawnManager(room: Room): void {
     }
   }
 
+  // ── Economy gate: at RCL 4+, don't spend energy on any non-essential
+  //     spawning until the core economy is online. Prevents the 50e scout
+  //     death spiral where cheap scouts starve out workers.
+  if (rcl >= 4) {
+    const minerCount = creepCounts['miner'] || 0;
+    const haulerCount = creepCounts['hauler'] || 0;
+    if (minerCount < 1 || haulerCount < 1) return;
+  }
+
   // ── Colonization scouts (after regular roles, before claimer) ──
   if (trySpawnScout(room, spawns[0])) return;
 
