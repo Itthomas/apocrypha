@@ -54,8 +54,8 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
     { minRcl: 7, primary: { work: 15, carry: 3, move: 3 }, fallback: { work: 10, carry: 2, move: 2 } },
   ],
   // Combat: dynamically sized — largest possible block count at given ratio
-  // attacker: tough:attack:move = 1:1:2 (4 parts/block, 190e)
-  // attrition: tough:heal:move = 5:1:3 (9 parts/block, 450e)
+  // attacker: carry:attack:move = 1:1:1 (3 parts/block, 180e)
+  // attrition: carry:heal:move = 4:1:1 (6 parts/block, 500e)
   attacker: [] as BodyTier[],
   attrition: [] as BodyTier[],
 
@@ -65,18 +65,20 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
 
 const MAX_CREEP_PARTS = 50;
 
-/** Build the largest combat body that fits in energyAvailable at the role's fixed ratio */
+/** Build the largest combat body that fits in energyAvailable at the role's fixed ratio.
+ *  Uses CARRY instead of TOUGH — empty CARRY adds 0 fatigue (no extra MOVE needed)
+ *  while providing the same 100 HP, making bodies cheaper and faster to spawn. */
 function getCombatBody(role: string, energy: number): BodyPartConstant[] | null {
-  let partsPerBlock: number, blockCost: number, tough: number, combat: number, move: number;
+  let partsPerBlock: number, blockCost: number, carry: number, combat: number, move: number;
 
   if (role === 'attacker') {
-    // 1:1:2 tough:attack:move = 4 parts, 190e
-    partsPerBlock = 4; blockCost = 190;
-    tough = 1; combat = 1; move = 2;
+    // 1:1:1 carry:attack:move = 3 parts, 180e
+    partsPerBlock = 3; blockCost = 180;
+    carry = 1; combat = 1; move = 1;
   } else {
-    // 3:1:4 tough:heal:move = 8 parts, 480e
-    partsPerBlock = 8; blockCost = 480;
-    tough = 3; combat = 1; move = 4;
+    // 4:1:1 carry:heal:move = 6 parts, 500e
+    partsPerBlock = 6; blockCost = 500;
+    carry = 4; combat = 1; move = 1;
   }
 
   const maxByEnergy = Math.floor(energy / blockCost);
@@ -84,8 +86,8 @@ function getCombatBody(role: string, energy: number): BodyPartConstant[] | null 
   const blocks = Math.max(1, Math.min(maxByEnergy, maxByParts));
 
   const spec: BodySpec = role === 'attacker'
-    ? { tough: tough * blocks, attack: combat * blocks, move: move * blocks }
-    : { tough: tough * blocks, heal: combat * blocks, move: move * blocks };
+    ? { carry: carry * blocks, attack: combat * blocks, move: move * blocks }
+    : { carry: carry * blocks, heal: combat * blocks, move: move * blocks };
 
   return bodyFromSpec(spec);
 }
@@ -93,28 +95,34 @@ function getCombatBody(role: string, energy: number): BodyPartConstant[] | null 
 /**
  * Build a body part array from a BodySpec.
  * Standard roles: [WORK..., CARRY..., MOVE...]
- * Combat roles: [TOUGH×N, MOVE×N, ATTACK/HEAL interleaved with MOVE]
+ * Attacker:        [CARRY×N, ATTACK×N, MOVE×N]
+ * Attrition:       [CARRY×N, MOVE×(M-1), HEAL×(H-1), MOVE, HEAL]
  */
 function bodyFromSpec(spec: BodySpec): BodyPartConstant[] {
-  // Combat body: TOUGH front, remaining MOVE pool, then ops interleaved 1:1
-  if (spec.tough && (spec.attack || spec.heal)) {
+  // Attacker body: CARRY front, ATTACK middle, MOVE at the end
+  if (spec.carry && spec.attack) {
     const parts: BodyPartConstant[] = [];
-    const combatCount = spec.attack || spec.heal || 0;
+    for (let i = 0; i < (spec.carry || 0); i++) parts.push(CARRY);
+    for (let i = 0; i < (spec.attack || 0); i++) parts.push(ATTACK);
+    for (let i = 0; i < spec.move; i++) parts.push(MOVE);
+    return parts;
+  }
+
+  // Attrition body: CARRY front, MOVE×(M-1), HEAL×(H-1), MOVE, HEAL
+  if (spec.carry && spec.heal) {
+    const parts: BodyPartConstant[] = [];
+    const healCount = spec.heal || 0;
     const moveCount = spec.move || 0;
-    const moveExtra = moveCount - combatCount; // MOVE beyond the 1:1 interleave
 
-    // Tough front
-    for (let i = 0; i < (spec.tough || 0); i++) parts.push(TOUGH);
-
-    // Remaining MOVE pool between tough and ops
-    for (let i = 0; i < moveExtra; i++) parts.push(MOVE);
-
-    // Operational parts interleaved 1:1 with MOVE
-    for (let i = 0; i < combatCount; i++) {
-      if (spec.attack) parts.push(ATTACK);
-      else parts.push(HEAL);
-      parts.push(MOVE);
-    }
+    for (let i = 0; i < (spec.carry || 0); i++) parts.push(CARRY);
+    // Most MOVE parts between CARRY and HEAL, leaving 1 MOVE at the end
+    for (let i = 0; i < moveCount - 1; i++) parts.push(MOVE);
+    // Most HEAL parts, leaving 1 after the final MOVE
+    for (let i = 0; i < healCount - 1; i++) parts.push(HEAL);
+    // Second-to-last: MOVE
+    parts.push(MOVE);
+    // Last: HEAL (arrives last, tanking for the rest)
+    parts.push(HEAL);
     return parts;
   }
 
@@ -156,10 +164,10 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
   if (role === 'defender') {
     if (rcl < 3) return null;
     const BLOCKS = 5;
-    const BLOCK_COST = 190; // tough(10) + attack(80) + move×2(100)
+    const BLOCK_COST = 180; // carry(50) + attack(80) + move(50)
     const blocks = Math.min(BLOCKS, Math.floor(energyAvailable / BLOCK_COST));
     if (blocks < 1) return null;
-    return bodyFromSpec({ tough: blocks, attack: blocks, move: blocks * 2 });
+    return bodyFromSpec({ carry: blocks, attack: blocks, move: blocks });
   }
 
   // Remote worker: 1:3:2 work:carry:move = 6 parts, 250e per block
