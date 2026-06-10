@@ -596,6 +596,38 @@ function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
   return false;
 }
 
+// ── Ranger spawning (seasonal world only) ──
+
+const RANGER_MAX_PER_ROOM = 3;
+
+function trySpawnRanger(room: Room, spawn: StructureSpawn): boolean {
+  if (!Memory.seasonal) return false;
+
+  // Gate: only spawn when spawns + extensions are full and storage exists
+  if (!room.storage) return false;
+  if (room.energyAvailable < room.energyCapacityAvailable) return false;
+
+  const rangers = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'ranger');
+  if (rangers.length >= RANGER_MAX_PER_ROOM) return false;
+
+  const body = getBody('ranger', room.controller?.level ?? 0, room.energyAvailable, room.energyCapacityAvailable);
+  if (!body || body.length === 0) return false;
+
+  const name = `ranger_${Game.time}`;
+  const result = spawn.spawnCreep(body, name, {
+    memory: { role: 'ranger', roomBuffer: [] }
+  });
+
+  if (result === OK) {
+    const cost = body.reduce((sum, p) => sum + BODYPART_COST[p], 0);
+    trackSpawnSpend(room.name, cost);
+    console.log(`[spawn] ${name} (ranger) cost=${cost}e`);
+    return true;
+  }
+
+  return false;
+}
+
 // ── Spawn Manager ──
 
 /** Run spawn logic for one room. Call once per tick. */
@@ -718,4 +750,7 @@ export function runSpawnManager(room: Room): void {
 
   // ── Colonization builders (lowest priority) ──
   if (trySpawnColonyBuilder(room, spawns[0])) return;
+
+  // ── Rangers (dead last — seasonal world only) ──
+  if (trySpawnRanger(room, spawns[0])) return;
 }

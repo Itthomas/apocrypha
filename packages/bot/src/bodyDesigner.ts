@@ -61,6 +61,9 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
 
   // Remote worker: 1:3:2 work:carry:move (6 parts/block, 250e)
   remoteWorker: [] as BodyTier[],
+
+  // Ranger: fixed body — no tiering
+  ranger: [] as BodyTier[],
 };
 
 const MAX_CREEP_PARTS = 50;
@@ -168,6 +171,11 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
     const blocks = Math.min(BLOCKS, Math.floor(energyAvailable / BLOCK_COST));
     if (blocks < 1) return null;
     return bodyFromSpec({ carry: blocks, attack: blocks, move: blocks });
+  }
+
+  // Ranger: fixed body — [R_A×2, MOVE×3, HEAL]
+  if (role === 'ranger') {
+    return [RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE, HEAL];
   }
 
   // Remote worker: 1:3:2 work:carry:move = 6 parts, 250e per block
