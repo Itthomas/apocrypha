@@ -17,6 +17,7 @@ const BUFFER_SIZE = 20;
 interface RangerMemory {
   role: 'ranger';
   roomBuffer: string[];
+  targetExit?: ExitConstant;
   lastRoom?: string;
 }
 
@@ -48,8 +49,9 @@ export function run(creep: Creep): boolean {
     return true;
   }
 
-  // Track room changes for the buffer
+  // Track room changes: flush stale exit target, update buffer
   if (mem.lastRoom !== creep.room.name) {
+    mem.targetExit = undefined;
     pushBuffer(mem, creep.room.name);
     mem.lastRoom = creep.room.name;
   }
@@ -100,27 +102,34 @@ function pushBuffer(mem: RangerMemory, room: string): void {
   }
 }
 
-/** Choose a random exit, preferring rooms not recently visited.
- *  Excludes hostile and hallway rooms from all choices. */
+/** Choose a random exit once per room, preferring rooms not recently
+ *  visited. Excludes hostile rooms and hallways. Sticks to the
+ *  chosen exit until the creep leaves the room. */
 function pathToExit(creep: Creep, mem: RangerMemory): void {
+  // Already have a target — just move toward it
+  if (mem.targetExit !== undefined) {
+    const exit = creep.pos.findClosestByPath(mem.targetExit);
+    if (exit) creep.moveTo(exit, { maxRooms: 1 });
+    return;
+  }
+
   const exits = Game.map.describeExits(creep.room.name);
   if (!exits) return;
 
   // Collect valid exits (skip hostile rooms and hallways)
   const hostileRooms = Memory.hostileRooms as Record<string, number> | undefined;
-  const candidates: string[] = [];
-  let fresh: string[] = [];
+  const candidates: Array<{ dir: ExitConstant; room: string }> = [];
+  let fresh: typeof candidates = [];
 
   for (const _dir in exits) {
     const adj = exits[_dir];
     if (!adj) continue;
-    // Skip hallways — no score items there, and they're transit-only
     if (isHallway(adj)) continue;
-    // Skip hostile rooms
     if (hostileRooms?.[adj] && Game.time - hostileRooms[adj] < 10000) continue;
-    candidates.push(adj);
+    const entry = { dir: parseInt(_dir) as ExitConstant, room: adj };
+    candidates.push(entry);
     if (!mem.roomBuffer.includes(adj)) {
-      fresh.push(adj);
+      fresh.push(entry);
     }
   }
 
@@ -129,10 +138,7 @@ function pathToExit(creep: Creep, mem: RangerMemory): void {
   // Prefer fresh rooms; fall back to any candidate
   const pool = fresh.length > 0 ? fresh : candidates;
   const chosen = pool[Math.floor(Math.random() * pool.length)];
-  const exit = creep.pos.findClosestByPath(Game.map.findExit(creep.room.name, chosen) as ExitConstant);
-  if (exit) {
-    creep.moveTo(exit, { maxRooms: 1 });
-  }
+  mem.targetExit = chosen.dir;
 }
 
 /** Assess whether the ranger can safely engage the hostiles in this room. */
