@@ -9,7 +9,7 @@
  * room edges to mark them hostile and loop back.
  */
 
-import { isHallway, isSectorCenter } from '../lib/travel';
+import { isSectorCenter } from '../lib/travel';
 
 const BUFFER_SIZE = 20;
 
@@ -100,7 +100,6 @@ function pathToExit(creep: Creep, mem: RangerMemory): void {
   for (const _dir in exits) {
     const adj = exits[_dir];
     if (!adj) continue;
-    if (isHallway(adj)) continue;
     if (isSectorCenter(adj)) continue;
     if (hostileRooms?.[adj] && Game.time - hostileRooms[adj] < 10000) continue;
     const entry = { dir: parseInt(_dir) as ExitConstant, room: adj };
