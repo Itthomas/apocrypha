@@ -620,7 +620,7 @@ function trySpawnColonyBuilder(room: Room, spawn: StructureSpawn): boolean {
 
 // ── Ranger spawning (seasonal world only) ──
 
-const RANGER_MAX_PER_ROOM = 3;
+const RANGER_MAX_PER_ROOM = 10;
 
 function trySpawnRanger(room: Room, spawn: StructureSpawn): boolean {
   if (!Memory.seasonal) return false;

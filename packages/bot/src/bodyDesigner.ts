@@ -176,9 +176,9 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
     return bodyFromSpec({ carry: blocks, attack: blocks, move: blocks });
   }
 
-  // Ranger: fixed body — [R_A×2, MOVE×3, HEAL]
+  // Ranger: fixed body — [MOVE] (cheap seasonal score collector)
   if (role === 'ranger') {
-    return [RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE, HEAL];
+    return [MOVE];
   }
 
   // Hit-and-runner: fixed body — [CARRY×14, MOVE×5, R_A×2, HEAL×3, MOVE, HEAL]

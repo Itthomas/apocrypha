@@ -1,17 +1,16 @@
 /**
- * roles/ranger.ts — Seasonal world score collector & scout hunter
+ * roles/ranger.ts — Seasonal world score collector
  *
- * Fixed body: [RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE, HEAL]
+ * Fixed body: [MOVE] (50e) — cheap disposable wanderer.
  *
- * Roams randomly through unexplored rooms, collecting score items and
- * killing hostile scouts. Kites at range 2-3. Avoids towers and hostile
- * rooms. Maintains a 20-room personal buffer to bias exploration toward
- * new territory.
+ * Roams randomly through unexplored rooms collecting score items.
+ * Maintains a 20-room personal buffer to bias exploration toward
+ * new territory. Avoids hostile rooms. Freezes on tower-defended
+ * room edges to mark them hostile and loop back.
  */
 
 import { isHallway } from '../lib/travel';
 
-/** Max rooms in the personal exploration buffer */
 const BUFFER_SIZE = 20;
 
 interface RangerMemory {
@@ -24,9 +23,6 @@ interface RangerMemory {
 export function run(creep: Creep): boolean {
   const mem = creep.memory as RangerMemory;
   if (!mem.roomBuffer) mem.roomBuffer = [];
-
-  // ── Self-heal every tick ──
-  creep.heal(creep);
 
   // ── Edge override ──
   // If on the boundary and the room is owned with a tower, freeze:
@@ -56,27 +52,7 @@ export function run(creep: Creep): boolean {
     mem.lastRoom = creep.room.name;
   }
 
-  // ── Priority 1: hunt killable hostiles ──
-  const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
-  if (hostiles.length > 0 && canEngage(hostiles)) {
-    const closest = creep.pos.findClosestByPath(hostiles);
-    if (closest) {
-      const range = creep.pos.getRangeTo(closest);
-      if (range <= 3) {
-        creep.rangedAttack(closest);
-      }
-      if (range > 3) {
-        creep.moveTo(closest);
-      } else if (range === 1) {
-        // Too close — kite away
-        creep.moveTo(closest, { flee: true });
-      }
-      // range 2-3: attack and hold position
-      return true;
-    }
-  }
-
-  // ── Priority 2: collect score items ──
+  // ── Collect score items ──
   const scores = creep.room.find(FIND_SCORES);
   if (scores.length > 0) {
     const best = scores.length === 1
@@ -139,17 +115,4 @@ function pathToExit(creep: Creep, mem: RangerMemory): void {
   const pool = fresh.length > 0 ? fresh : candidates;
   const chosen = pool[Math.floor(Math.random() * pool.length)];
   mem.targetExit = chosen.dir;
-}
-
-/** Assess whether the ranger can safely engage the hostiles in this room. */
-function canEngage(hostiles: Creep[]): boolean {
-  let totalRanged = 0;
-  let totalParts = 0;
-
-  for (const hostile of hostiles) {
-    totalRanged += hostile.getActiveBodyparts(RANGED_ATTACK);
-    totalParts += hostile.body.length;
-  }
-
-  return totalRanged <= 2 && totalParts <= 12;
 }
