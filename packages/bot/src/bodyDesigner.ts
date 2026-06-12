@@ -64,6 +64,9 @@ const BODY_TIERS: Record<string, BodyTier[]> = {
 
   // Ranger: fixed body — no tiering
   ranger: [] as BodyTier[],
+
+  // Hit-and-runner: fixed body — no tiering
+  hitAndRunner: [] as BodyTier[],
 };
 
 const MAX_CREEP_PARTS = 50;
@@ -176,6 +179,19 @@ export function getBody(role: string, rcl: number, energyAvailable: number, ener
   // Ranger: fixed body — [R_A×2, MOVE×3, HEAL]
   if (role === 'ranger') {
     return [RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE, HEAL];
+  }
+
+  // Hit-and-runner: fixed body — [CARRY×14, MOVE×5, R_A×2, HEAL×3, MOVE, HEAL]
+  if (role === 'hitAndRunner') {
+    return [
+      CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
+      CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
+      MOVE, MOVE, MOVE, MOVE, MOVE,
+      RANGED_ATTACK, RANGED_ATTACK,
+      HEAL, HEAL, HEAL,
+      MOVE,
+      HEAL,
+    ];
   }
 
   // Remote worker: 1:3:2 work:carry:move = 6 parts, 250e per block

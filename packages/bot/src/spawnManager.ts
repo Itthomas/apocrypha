@@ -415,6 +415,28 @@ function trySpawnCombat(room: Room, spawn: StructureSpawn): boolean {
     }
   }
 
+  // Hit-and-runner
+  const hitAndRunnerTargets = normalizeTargets(targets.hitAndRunner);
+  for (const [targetRoom, quota] of hitAndRunnerTargets) {
+    if (countCombatCreeps('hitAndRunner', targetRoom) >= quota) continue;
+    const body = getBody('hitAndRunner', rcl, room.energyAvailable, room.energyCapacityAvailable);
+    if (!body || body.length === 0) continue;
+    const name = `hitAndRunner_${targetRoom}_${Game.time}`;
+    const result = spawn.spawnCreep(body, name, {
+      memory: {
+        role: 'hitAndRunner',
+        targetRoom,
+        phase: 'attriting',
+        sourceRoom: room.name,
+        spawnTick: Game.time,
+      }
+    });
+    if (result === OK) {
+      console.log(`[spawn] ${name} (hitAndRunner) → ${targetRoom}`);
+      return true;
+    }
+  }
+
   return false;
 }
 

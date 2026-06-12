@@ -87,13 +87,6 @@ export function travelToRoom(creep: Creep, targetRoom: string, skipHostileAvoid:
   // Already there
   if (creep.room.name === targetRoom) return false;
 
-  // ── Edge override: move toward room center if on the boundary ──
-  const pos = creep.pos;
-  if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) {
-    creep.moveTo(new RoomPosition(25, 25, creep.room.name), { maxRooms: 1 });
-    return true;
-  }
-
   // Detect zone mode from the creep's current room (sticky through hallways)
   const roomStatus = Game.map.getRoomStatus(creep.room.name).status;
   if (roomStatus === 'respawn' || roomStatus === 'novice') {

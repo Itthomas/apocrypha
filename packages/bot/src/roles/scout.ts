@@ -69,7 +69,10 @@ export function run(creep: Creep): boolean {
   // ════════════════════════════════════════════════════════
   if (mem.phase === 'traveling') {
     if (creep.room.name !== mem.targetRoom) {
-      travelToRoom(creep, mem.targetRoom, false, true);
+      if (!travelToRoom(creep, mem.targetRoom, false, true)) {
+        // Center avoidance blocked all routes — retry without it
+        travelToRoom(creep, mem.targetRoom, false, false);
+      }
       return true;
     }
     // Arrived — but if we took too long, the room is too far. Abandon it.
